@@ -14,9 +14,10 @@ TuinaDex 是面向中医推拿/按摩场景构建的具身智能机器人系统�
 ---
 
 ## 2. 技术栈与运行环境
-- **中间件与框架**: ROS2 Lyrical Luth / Python 3.14+ / Hugging Face LeRobot
-  - 当前宿主机为 Ubuntu 26.04 (Resolute)；由于系统级 ROS2 安装需要 sudo 密码，使用官方 Docker 镜像 `ros:lyrical` 作为 ROS2 运行环境。
-  - ROS2 命令入口：`scripts/ros2_docker.sh <command>`；该脚本挂载项目根目录到 `/workspace` 并自动 source `/opt/ros/lyrical/setup.bash`。
+- **中间件与框架**: ROS2 Lyrical Luth Desktop / Python 3.14+ / Hugging Face LeRobot
+  - 当前宿主机为 Ubuntu 26.04 (Resolute)，已通过官方 ROS apt 源安装 `ros-lyrical-desktop` 和 `ros-dev-tools`。
+  - `~/.bashrc` 已固化 `source /opt/ros/lyrical/setup.bash`。
+  - `scripts/ros2_docker.sh` 仅作为官方 `ros:lyrical` 镜像的隔离回退环境，不再作为默认运行入口。
 - **硬件通信协议**: 
   - LEAP Hand: Dynamixel Protocol 2.0 (USB-TTL, 波特率 4,000,000 bps, 位置-电流模式)
   - 机械臂 (后续): Linux SocketCAN (500 kbps)
@@ -65,9 +66,9 @@ TuinaDex 是面向中医推拿/按摩场景构建的具身智能机器人系统�
 ### 验证命令 (固化)
 - 宿主机纯逻辑与遥操/驱动单测：
   `~/win_office/conda/envs/leap_hand/bin/python -m pytest tests/ -v`
-- ROS2 集成测试（Lyrical 容器）：
-  `scripts/ros2_docker.sh python3 -m pytest tests/test_leap_hand_node_integration.py tests/test_recorder_node.py -v`
+- ROS2 集成测试（宿主机 Lyrical Desktop）：
+  `source /opt/ros/lyrical/setup.bash && python3 -m pytest tests/test_leap_hand_node_integration.py tests/test_recorder_node.py -v`
 - LeRobot 适配器测试：
   `~/win_office/conda/envs/smolvla/bin/python -m pytest tests/test_dataset_adapter.py -v`
 - 构建：
-  `scripts/ros2_docker.sh colcon build --symlink-install --packages-select tuinadex_hand tuinadex_teleop tuinadex_recorder`
+  `source /opt/ros/lyrical/setup.bash && colcon build --symlink-install --packages-select tuinadex_hand tuinadex_teleop tuinadex_recorder`
