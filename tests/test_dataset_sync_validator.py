@@ -50,3 +50,29 @@ def test_dataset_validator():
     ok_nan, errors_nan = val.validate_episode(t, s_nan, a)
     assert ok_nan is False
     assert any("NaN" in e for e in errors_nan)
+
+
+def test_validator_spec_per_joint_limits():
+    """规范逐关节限位: thumb_yaw (idx 12) 上限 1.80, 超出即拒."""
+    from tuinadex_dataset.validator import SPEC_JOINT_LIMITS
+
+    assert len(SPEC_JOINT_LIMITS) == 16
+    assert SPEC_JOINT_LIMITS[12] == (-0.30, 1.80)
+    assert SPEC_JOINT_LIMITS[0] == (-0.35, 0.35)
+
+    val = DatasetValidator()
+    t = np.linspace(0.0, 1.0, 20)
+    s = np.zeros((20, 16)); a = np.zeros((20, 16))
+    s[5, 12] = 1.9   # thumb_yaw 超上限 (旧标量限位 2.5 会漏检)
+    ok, errors = val.validate_episode(t, s, a)
+    assert ok is False and any("限位" in e for e in errors)
+
+
+def test_validator_still_passes_spec_boundary_values():
+    val = DatasetValidator()
+    t = np.linspace(0.0, 1.0, 20)
+    s = np.zeros((20, 16)); a = np.zeros((20, 16))
+    s[:, 12] = 1.80   # 恰好在上限
+    s[:, 0] = -0.35   # 侧摆下限
+    ok, errors = val.validate_episode(t, s, a)
+    assert ok is True, errors
