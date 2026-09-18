@@ -1,0 +1,15 @@
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.pytest_cache/
+.coverage
+htmlcov/
+build/
+install/
+log/
+.vscode/
+.idea/
+*.bag
+*.mcap
+*.parquet

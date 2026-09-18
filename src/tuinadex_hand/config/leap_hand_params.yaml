@@ -1,0 +1,11 @@
+leap_hand_node:
+  ros__parameters:
+    port: "/dev/ttyUSB0"
+    baudrate: 4000000
+    kP: 300
+    kI: 0
+    kD: 100
+    curr_lim: 150
+    control_rate_hz: 50.0
+    watchdog_timeout_sec: 0.30
+    mock_mode: false
