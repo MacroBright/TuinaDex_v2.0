@@ -18,6 +18,7 @@ from rclpy.node import Node
 from sensor_msgs.msg import JointState
 
 from tuinadex_teleop.tracking import HandTracker, JointMapper, OneEuroFilter
+from tuinadex_teleop.tracking.teleop_logic import handedness_ok, regained_after_gap
 
 CANONICAL_JOINT_NAMES = [
     "index_yaw",  "index_mcp",  "index_pip",  "index_dip",
@@ -39,12 +40,15 @@ class TeleopGestureNode(Node):
         self.declare_parameter("show_preview", False)
         self.declare_parameter("filter_min_cutoff", 1.0)
         self.declare_parameter("filter_beta", 0.05)
+        self.declare_parameter("required_handedness", "any")
 
         self.camera_id = self.get_parameter("camera_id").get_parameter_value().integer_value
         self.rate_hz = self.get_parameter("publish_rate_hz").get_parameter_value().double_value
         self.show_preview = self.get_parameter("show_preview").get_parameter_value().bool_value
         min_cutoff = self.get_parameter("filter_min_cutoff").get_parameter_value().double_value
         beta = self.get_parameter("filter_beta").get_parameter_value().double_value
+        self.required_handedness = str(
+            self.get_parameter("required_handedness").value)
 
         # 初始化视觉追踪与映射器
         self.tracker = HandTracker(max_num_hands=1)
@@ -72,6 +76,7 @@ class TeleopGestureNode(Node):
         self.is_paused = False
         self.is_locked = False
         self.locked_angles = np.zeros(16, dtype=np.float64)
+        self._hand_seen = False
 
         # 定时采集与发布循环
         timer_period = 1.0 / self.rate_hz
@@ -85,8 +90,13 @@ class TeleopGestureNode(Node):
 
         now = time.time()
         results = self.tracker.detect(frame)
+        seen = bool(results) and handedness_ok(
+            results[0].handedness, self.required_handedness)
+        if regained_after_gap(self._hand_seen, seen):
+            self.filter.reset()
+        self._hand_seen = seen
 
-        if results and len(results) > 0:
+        if seen:
             hand = results[0]
             # 1. 映射为 16 维相对弧度 (0 为全开，>0 为弯曲)
             raw_angles = self.mapper.map_keypoints_to_leap(hand)
@@ -126,12 +136,16 @@ class TeleopGestureNode(Node):
                 self.is_locked = not self.is_locked
                 if self.is_locked and filtered_angles is not None:
                     self.locked_angles = filtered_angles.copy()
-            elif key == ord('q') or key == 27:  # Q / ESC 退出
-                rclpy.shutdown()
+            elif key == ord('q') or key == ord('Q') or key == 27:  # Q / ESC 退出
+                raise SystemExit("user quit")
 
     def destroy_node(self) -> None:
         if self.cap.isOpened():
             self.cap.release()
+        try:
+            self.tracker.close()
+        except Exception:
+            pass
         cv2.destroyAllWindows()
         super().destroy_node()
 
