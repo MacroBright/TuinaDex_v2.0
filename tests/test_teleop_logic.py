@@ -1,6 +1,8 @@
 """test_teleop_logic.py — 遥操纯逻辑: 利手过滤与重捕获判定."""
 import sys
 from pathlib import Path
+import pytest
+pytest.importorskip("mediapipe")
 
 SRC = Path(__file__).resolve().parents[1] / "src" / "tuinadex_teleop"
 if str(SRC) not in sys.path:

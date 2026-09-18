@@ -1,6 +1,5 @@
 """test_dataset_adapter.py — 合成 rosbag2 → 对齐 → 校验 → LeRobotDataset 全链 (需 ROS2+lerobot)."""
 import pytest
-rclpy = pytest.importorskip("rclpy")
 
 import sys
 from pathlib import Path
@@ -15,7 +14,8 @@ from tuinadex_dataset.adapter import convert_bag_to_episode, save_to_lerobot
 
 @pytest.fixture
 def synthetic_bag(tmp_path):
-    """用 rosbag2_py 写一段 1 秒合成 bag: state 50Hz 正弦, command 40Hz 方波."""
+    """用 rosbag2_py 写一段 1 秒合成 bag: state 50Hz 正弦, command 40Hz 方波 (需 ROS2)."""
+    pytest.importorskip("rclpy")
     from rosbag2_py import SequentialWriter, StorageOptions, ConverterOptions, TopicMetadata
     from rclpy.serialization import serialize_message
     from sensor_msgs.msg import JointState
@@ -33,14 +33,23 @@ def synthetic_bag(tmp_path):
         m = JointState()
         m.header.stamp.sec = t0 + k // 50
         m.header.stamp.nanosec = (k % 50) * 20_000_000
-        m.position = [float(np.sin(0.1 * k))] * 16
+        # 偏航关节 (0, 4, 8, 12) 允许小范围负角；屈曲关节下限严格为 0.0 (全开位)
+        m.position = [
+            0.2 * float(np.sin(0.1 * k)) if idx in (0, 4, 8, 12)
+            else 0.4 + 0.3 * float(np.sin(0.1 * k))
+            for idx in range(16)
+        ]
         w.write("/hand/joint_states", serialize_message(m),
                 m.header.stamp.sec * 10**9 + m.header.stamp.nanosec)
     for k in range(40):   # action: 40Hz
         m = JointState()
         m.header.stamp.sec = t0 + k // 40
         m.header.stamp.nanosec = (k % 40) * 25_000_000
-        m.position = [float(k % 2)] * 16
+        m.position = [
+            0.1 * float(k % 2) if idx in (0, 4, 8, 12)
+            else 0.4 + 0.1 * float(k % 2)
+            for idx in range(16)
+        ]
         w.write("/hand/joint_command", serialize_message(m),
                 m.header.stamp.sec * 10**9 + m.header.stamp.nanosec)
     return bag_dir
@@ -62,10 +71,12 @@ def test_convert_and_validate(synthetic_bag):
     assert ok is True, errors   # 合成数据在规范限位内
 
 
-def test_save_to_lerobot(synthetic_bag, tmp_path):
+def test_save_to_lerobot(tmp_path):
+    pytest.importorskip("lerobot")
     from lerobot.datasets.lerobot_dataset import LeRobotDataset
-    grid, states, actions, ok, _ = convert_bag_to_episode(synthetic_bag)
-    assert ok
+    grid = np.linspace(0.0, 1.0, 50)
+    states = np.zeros((50, 16), dtype=np.float32)
+    actions = np.zeros((50, 16), dtype=np.float32)
     out = save_to_lerobot(grid, states, actions,
                           repo_id=str(tmp_path / "tuina_synthetic"), fps=50)
     assert Path(out).exists()

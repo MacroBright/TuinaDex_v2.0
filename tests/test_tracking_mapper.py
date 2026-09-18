@@ -3,6 +3,7 @@ import sys
 from pathlib import Path
 import numpy as np
 import pytest
+pytest.importorskip("mediapipe")
 
 WORKSPACE_SRC = Path(__file__).resolve().parents[1] / "src" / "tuinadex_teleop"
 if str(WORKSPACE_SRC) not in sys.path:
@@ -24,6 +25,7 @@ def test_mapper_keypoints_api_for_node_callpath():
     节点级代码依赖 rclpy 无法在本机导入, 此测试守护节点实际调用的映射入口契约:
     传入 HandResult (21 landmark), 输出 16 维有限弧度.
     """
+    pytest.importorskip("mediapipe")
     from tuinadex_teleop.tracking.hand_tracker import HandResult
 
     class _LM:
