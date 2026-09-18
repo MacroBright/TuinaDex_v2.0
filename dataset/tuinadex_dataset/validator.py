@@ -5,17 +5,26 @@ from typing import List, Tuple
 import numpy as np
 
 
+# 规范逐关节限位 (rad, 相对全开位 0) — 与 LEAP_HAND_MVP_INTERFACE_SPEC §1 一致
+SPEC_JOINT_LIMITS = (
+    (-0.35, 0.35), (0.0, 2.00), (0.0, 1.85), (0.0, 1.80),   # index
+    (-0.35, 0.35), (0.0, 2.00), (0.0, 1.85), (0.0, 1.80),   # middle
+    (-0.35, 0.35), (0.0, 2.00), (0.0, 1.85), (0.0, 1.80),   # ring
+    (-0.30, 1.80), (0.0, 1.60), (0.0, 1.80), (0.0, 1.80),   # thumb
+)
+
+
 class DatasetValidator:
     """检查导出的示教帧是否存在 NaN、越界或异常跳变."""
 
     def __init__(
         self,
-        joint_limits_min: float = -0.50,
-        joint_limits_max: float = 2.50,
+        joint_limits=None,
         max_single_step_delta: float = 0.50,
     ):
-        self.limits_min = joint_limits_min
-        self.limits_max = joint_limits_max
+        self.joint_limits = tuple(joint_limits) if joint_limits is not None else SPEC_JOINT_LIMITS
+        self._lo = np.array([lo for lo, _ in self.joint_limits])
+        self._hi = np.array([hi for _, hi in self.joint_limits])
         self.max_delta = max_single_step_delta
 
     def validate_episode(
@@ -39,10 +48,10 @@ class DatasetValidator:
             errors.append("时间戳存在非单调递增或回退")
 
         # 3. 检查物理关节限位有界性
-        if np.any(states < self.limits_min) or np.any(states > self.limits_max):
-            errors.append(f"State 存在超出限位区间 [{self.limits_min}, {self.limits_max}] 的数值")
-        if np.any(actions < self.limits_min) or np.any(actions > self.limits_max):
-            errors.append(f"Action 存在超出限位区间 [{self.limits_min}, {self.limits_max}] 的数值")
+        if np.any(states < self._lo) or np.any(states > self._hi):
+            errors.append("State 存在超出规范逐关节限位的数值")
+        if np.any(actions < self._lo) or np.any(actions > self._hi):
+            errors.append("Action 存在超出规范逐关节限位的数值")
 
         # 4. 检查单步剧烈跳变
         state_delta = np.abs(np.diff(states, axis=0))
