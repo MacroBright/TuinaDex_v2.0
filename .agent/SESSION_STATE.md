@@ -10,16 +10,17 @@
 
 ## 2. 流水线阶段与 Agent 职责分工 (4-Phase Collaboration Pipeline)
 - [x] **Phase 1: 广域侦察与影响分析** (Antigravity 主导 · 看得广 - 完成旧工程源码研读、架构解耦分析、16-DOF 接口契约冻结、脚手架与基础驱动搭建)
-- [ ] **Phase 2: 深度规划与质量裁决** (Claude Code 主导 · 想得深 - 节点生命周期、看门狗安全状态机、MediaPipe 遥操解耦审核、Implementation Plan 细化)
-- [ ] **Phase 3: 手术级执行与交叉审查** (Codex 主导执行 · 改得准 + Claude Code 监督 - 落地 `tuinadex_hand` 节点、`tuinadex_teleop` 手势节点、`tuinadex_dataset` 离线转换工具与 TDD 测试)
+- [x] **Phase 2: 深度规划与质量裁决** (Claude Code 主导 · 想得深 - 全量代码审计、P0 缺陷修复、四项架构裁决落盘、Phase 3 实施计划完成)
+- [ ] **Phase 3: 手术级执行与交叉审查** (Codex 主导执行 · 改得准 + Claude Code 监督 - 按计划逐任务 TDD 落地 Task 0~8)
 - [ ] **Phase 4: 全局复核与文档闭环** (Antigravity 主导 · 看得广 - 全工程 colcon 构建、仿真/回环录制回放验证、文档与长程图谱归档)
 
-**当前进度**: Phase 1 进行中 (Antigravity 已冻结 16-DOF 规范，已初始化工程脚手架与基础驱动库)
+**当前进度**: Phase 3 待启动 (执行依据: `docs/superpowers/plans/2026-09-18-tuinadex-mvp-phase3.md`)
 
 ## 3. 协作推进记录与实证 (Completed Work & Evidence)
 | 时间 | 执行 Agent | 完成内容 | 验证依据 (测试命令 / 构建结果) | Git Commit |
 | :--- | :--- | :--- | :--- | :--- |
 | 2026-09-18 | Antigravity | 完成旧代码调研与 16-DOF 接口完全冻结，建立脚手架与规范，8项单元测试全绿 | 规范文档 `docs/specs/LEAP_HAND_MVP_INTERFACE_SPEC.md` | `d2a9767` |
+| 2026-09-18 | Claude Code | Phase 2 深度审计 + P0 遥操崩溃修复（`mapper.map()` → `map_keypoints_to_leap()`，新增 API 守卫测试）+ 四项架构裁决 + Phase 3 实施计划落盘 | 计划 `docs/superpowers/plans/2026-09-18-tuinadex-mvp-phase3.md`；`pytest tests/` 9/9 全绿（`leap_hand` conda env） | `77cb9ba` |
 
 ## 4. 核心技术决策与不变量 (Decisions & Invariants)
 - **不变量 1 (坐标与单位)**: ROS2 与 LeRobot 全链路强制 SI 单位弧度 (rad)。以实测校准后的 `OPEN_POSE`（全开平伸）为 0 rad 基准零位，手指屈伸弯曲为正 ($q > 0$)。
@@ -28,15 +29,24 @@
 - **不变量 4 (语义分离)**: State = 物理实测位置 (`/hand/joint_states`)；Action = 目标控制位置 (`/hand/joint_command`)，两者严格区分。
 - **不变量 5 (动作空间)**: Action 采用 16 维 absolute joint position，绝对禁止使用增量 delta。
 - **不变量 6 (控制模式与周期)**: 手部节点采用 50Hz (20ms) 循环，电机模式锁定为成熟验证过的位置-电流混合模式 (Position-Current Mode = 5)，限流 150mA。
+- **不变量 7 (节点生命周期, Phase 2 用户拍板)**: 普通 rclpy Node + 显式 `WatchdogStateMachine` 纯类 FSM（FOLLOWING/RELAXING），不使用 LifecycleNode；安全逻辑必须抽成不依赖 rclpy 的纯模块。
+- **不变量 8 (采集器实现, Phase 2 用户拍板)**: `tuinadex_recorder` 采用 rosbag2_py 进程内节点 + `std_srvs/Trigger` 起停服务，严禁 subprocess 包装 `ros2 bag record`。
+- **不变量 9 (bag 反序列化, Phase 2 用户拍板)**: 依赖 ROS2 环境（本机安装 ROS2，Ubuntu 26.04 对应发行版），不写纯 Python CDR 解析器。Task 0 为系统级安装，执行前必须人工确认。
+- **不变量 10 (测试环境矩阵)**: 本地单元测试 = `leap_hand` conda env (`~/win_office/conda/envs/leap_hand/bin/python -m pytest tests/ -v`)；LeRobot 适配器测试 = `smolvla` env (lerobot 0.4.4)；ROS2 依赖测试用 `pytest.importorskip("rclpy")` 守护。
 
 ## 5. 接力指令 (Handoff to Next Agent)
-- **接手 Agent 启动动作**: 
-  1. 运行自感知流程确认当前状态；
-  2. 查阅 `docs/specs/LEAP_HAND_MVP_INTERFACE_SPEC.md` 确认关节空间到舵机空间的数学转换关系；
-  3. 推进 Phase 2 规划或 Phase 3 节点与测试的高吞吐编写。
-- **未决疑问与风险提示**: 
-  - 实机测试前需确保 `/dev/ttyUSB0` 拥有 dialout 读写权限；
-  - 遥操作启动前需保证 MediaPipe 与 OpenCV 基础环境就绪。
+- **接手 Agent: Codex (Phase 3 手术级执行)**
+- **接手 Agent 启动动作**:
+
+  1. 运行自感知流程确认当前状态（本文件）；
+  2. 通读 `docs/superpowers/plans/2026-09-18-tuinadex-mvp-phase3.md`（唯一执行依据，含完整代码与 TDD 步骤），并查阅 `docs/specs/LEAP_HAND_MVP_INTERFACE_SPEC.md`；
+  3. 按 Task 0 → 8 顺序逐任务执行，每任务一个 commit；Task 1/2/4/5 可立即在本机 TDD（测试环境见不变量 10），Task 0 为系统级 ROS2 安装须**先向用户报告再执行**；
+  4. 每完成一个任务，在本文件第 3 节追加一行实证记录。
+- **未决疑问与风险提示**:
+  - Ubuntu 26.04 对应的 ROS2 发行版名称需实证核实（apt 源 / docs.ros.org），禁止凭记忆写死；若无官方支持则回退 Docker 方案并报告用户；
+  - 实机测试前需确保 `/dev/ttyUSB0` 拥有 dialout 读写权限（当前用户已在 dialout 组，设备未插时无该节点）；
+  - 遥操作启动前需保证 MediaPipe 与 OpenCV 基础环境就绪（`leap_hand` env 已装 mediapipe 1.0.0）；
+  - lerobot 0.4.4 的 `create`/`add_episode` API 签名需按计划 Task 7 Step 1 实测微调。
 
 ## 6. 本轮协作闭环总结汇报 (Collaboration Debriefing)
 *(待一轮多 Agent 任务全部完成后由收尾 Agent 填写)*
