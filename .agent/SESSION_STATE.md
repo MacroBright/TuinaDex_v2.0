@@ -28,7 +28,7 @@
 | 2026-09-18 | Codex | Task 5: 数据集校验器切换到规范逐关节限位 | `pytest tests/test_dataset_sync_validator.py -v` 4/4 | `2efeac2` |
 | 2026-09-18 | Codex | Task 6: tuinadex_recorder 进程内 rosbag2_py 采集包骨架与实现 | 本机全量 26 passed + 2 skipped；bag 落盘测试待 Task 0 | `3272b0b` |
 | 2026-09-18 | Codex | Task 7: rosbag2 → LeRobotDataset 离线适配器与 CLI；实测 LeRobot 0.4.4 使用 `lerobot.datasets` + `add_frame/save_episode` 而非计划中的 `add_episode` | 本机全量 26 passed + 3 skipped；全链测试待 Task 0 | `063b0c2` |
-| 2026-09-18 | Codex | Task 0: ROS2 Lyrical Luth 环境配置；宿主机 sudo 需密码，采用官方 Docker 镜像 `ros:lyrical` 和 `scripts/ros2_docker.sh` | ROS 官方 index-v4.yaml 确认 `lyrical`；`ros2`、`rclpy`、`rosbag2_py`、`colcon` 可用；三包 colcon 构建成功 | `e22ae7d` |
+| 2026-09-18 | Codex | Task 0: 按用户指定教程安装 ROS2 Lyrical Luth Desktop；安装官方 `ros2-apt-source 1.3.0~resolute`、`ros-lyrical-desktop 0.13.0`、`ros-dev-tools 1.0.3`，并固化 `~/.bashrc` source | `ros2`、`rclpy`、`rosbag2_py`、`colcon` 验证通过；talker/listener 实际收到 4 条消息 | `bc62a13` |
 | 2026-09-18 | Codex | ROS2 Lyrical API 兼容修复：`logger.warning`、`TopicMetadata(id=...)`、`create_subscription(..., raw=True)` | 容器内 `test_leap_hand_node_integration.py` 与 `test_recorder_node.py` 2/2 全绿 | `23720c8` |
 
 ## 4. 核心技术决策与不变量 (Decisions & Invariants)
@@ -42,7 +42,7 @@
 - **不变量 8 (采集器实现, Phase 2 用户拍板)**: `tuinadex_recorder` 采用 rosbag2_py 进程内节点 + `std_srvs/Trigger` 起停服务，严禁 subprocess 包装 `ros2 bag record`。
 - **不变量 9 (bag 反序列化, Phase 2 用户拍板)**: 依赖 ROS2 环境（本机安装 ROS2，Ubuntu 26.04 对应发行版），不写纯 Python CDR 解析器。Task 0 为系统级安装，执行前必须人工确认。
 - **不变量 10 (测试环境矩阵)**: 本地单元测试 = `leap_hand` conda env (`~/win_office/conda/envs/leap_hand/bin/python -m pytest tests/ -v`)；LeRobot 适配器测试 = `smolvla` env (lerobot 0.4.4)；ROS2 依赖测试用 `pytest.importorskip("rclpy")` 守护。
-- **不变量 11 (ROS2 运行环境, Task 0 用户确认)**: ROS2 发行版为 Lyrical Luth；宿主机 sudo 需密码，故当前统一使用官方 Docker 镜像 `ros:lyrical`，通过 `scripts/ros2_docker.sh` 挂载项目并自动 source ROS2。不要混用不同发行版路径。
+- **不变量 11 (ROS2 运行环境, Task 0 用户确认)**: ROS2 发行版为 Lyrical Luth Desktop，默认使用宿主机 `/opt/ros/lyrical/setup.bash`。不要混用不同发行版路径；`scripts/ros2_docker.sh` 仅作为隔离回退。
 
 ## 5. 接力指令 (Handoff to Next Agent)
 - **接手 Agent: Codex (Phase 3 手术级执行)**
