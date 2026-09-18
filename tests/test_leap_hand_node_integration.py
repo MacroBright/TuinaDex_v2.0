@@ -32,15 +32,18 @@ def test_mock_loop_and_watchdog(rclpy_ctx):
         JointState, "/hand/joint_states",
         lambda m: received.append(np.asarray(m.position)), 10)
 
-    # 1) 正常跟随: 持续发 0.8 rad 指令
+    # 1) 正常跟随: 侧摆 0.2 rad, 屈曲 0.8 rad, 全部在规范限位内
     pub = node.create_publisher(JointState, "/hand/joint_command", 10)
     import time as _time
-    cmd = JointState(); cmd.position = [0.8] * 16
+    expected = np.asarray([
+        0.2 if index in (0, 4, 8) else 0.8 for index in range(16)
+    ])
+    cmd = JointState(); cmd.position = expected.tolist()
     t_end = _time.monotonic() + 0.4
     while _time.monotonic() < t_end:
         pub.publish(cmd)
         rclpy.spin_once(node, timeout_sec=0.02)
-    assert received and np.allclose(received[-1], 0.8, atol=1e-6)
+    assert received and np.allclose(received[-1], expected, atol=1e-6)
 
     # 2) 停发指令 -> 看门狗 (0.1+0.1+0.2s) 平滑回 0
     t_end = _time.monotonic() + 1.0
