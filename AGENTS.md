@@ -72,3 +72,5 @@ TuinaDex 是面向中医推拿/按摩场景构建的具身智能机器人系统�
   `~/win_office/conda/envs/smolvla/bin/python -m pytest tests/test_dataset_adapter.py -v`
 - 构建：
   `source /opt/ros/lyrical/setup.bash && colcon build --symlink-install --packages-select tuinadex_hand tuinadex_teleop tuinadex_recorder`
+- 无真机端到端闭环：
+  `bash scripts/e2e_mock_check.sh`

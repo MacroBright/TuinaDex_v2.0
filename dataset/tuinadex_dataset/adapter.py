@@ -5,7 +5,6 @@ from pathlib import Path
 
 import numpy as np
 
-from .bag_reader import read_joint_state_bag
 from .synchronizer import TimeSynchronizer
 from .validator import DatasetValidator
 
@@ -20,6 +19,9 @@ CANONICAL_JOINT_NAMES = [
 
 def convert_bag_to_episode(bag_dir, fps: float = 50.0):
     """读取 state/action 双话题 -> 网格对齐 -> 规范校验."""
+    # Lazy import keeps save_to_lerobot usable in the LeRobot-only conda env.
+    from .bag_reader import read_joint_state_bag
+
     s_ts, s_pos = read_joint_state_bag(bag_dir, "/hand/joint_states")
     a_ts, a_pos = read_joint_state_bag(bag_dir, "/hand/joint_command")
     grid, states, actions = TimeSynchronizer(target_fps=fps).align_series(
@@ -54,7 +56,6 @@ def save_to_lerobot(grid, states, actions, repo_id: str, fps: float = 50.0) -> s
             frame={
                 "observation.state": torch.from_numpy(states[i].astype(np.float32)),
                 "action": torch.from_numpy(actions[i].astype(np.float32)),
-                "timestamp": float(grid[i] - grid[0]),
                 "task": "teleoperation",
             })
     dataset.save_episode()
