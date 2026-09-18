@@ -233,6 +233,7 @@ git commit -m "feat(hand): explicit watchdog state machine (pure logic, TDD)"
 - Consumes: `leap_driver.CANONICAL_JOINT_NAMES`（纯 numpy 模块，无循环依赖）。
 - Produces: `align_command(positions: Sequence[float], names: Optional[Sequence[str]] = None) -> Tuple[Optional[np.ndarray], str]`；合法返回 `(16 维 ndarray, "")`，拒绝返回 `(None, 原因)`。Task 3 依赖。
 - 语义收紧（相对旧节点内联逻辑）：未知关节名与 names 数量 ≠16 一律**拒绝**（旧代码静默忽略），NaN/Inf 显式拒绝。
+- **安全护栏**：合法但越出 Spec §1 逐关节限位的指令被**夹到边界**（不回绝、不把越界弧度写进电机路径）。
 
 - [ ] **Step 1: 写失败测试**
 
@@ -247,12 +248,12 @@ SRC = Path(__file__).resolve().parents[1] / "src" / "tuinadex_hand"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
-from tuinadex_hand.command_processing import align_command
+from tuinadex_hand.command_processing import align_command, JOINT_SPEC_LIMITS
 from tuinadex_hand.driver.leap_driver import CANONICAL_JOINT_NAMES
 
 
 def test_valid_passthrough_canonical_order():
-    q = np.arange(16, dtype=np.float64) * 0.1
+    q = np.arange(16, dtype=np.float64) * 0.02   # 0..0.30 全在 Spec 限位内, clamp 退化为恒等
     out, reason = align_command(q.tolist(), CANONICAL_JOINT_NAMES)
     assert out is not None and reason == ""
     np.testing.assert_allclose(out, q)
@@ -264,13 +265,13 @@ def test_valid_no_names():
 
 
 def test_reorders_noncanonical_names():
-    # 交换 index_yaw (0) 与 thumb_ip (15) 的位置
+    # 交换 index_yaw (0) 与 thumb_ip (15) 的位置; 取 0.02*i -> 全在限位内, 免被 clamp 干扰
     names = list(CANONICAL_JOINT_NAMES)
     names[0], names[15] = names[15], names[0]
-    pos = [float(i) for i in range(16)]
+    pos = [0.02 * i for i in range(16)]
     out, reason = align_command(pos, names)
     assert out is not None and reason == ""
-    assert out[0] == 15.0
+    assert abs(out[0] - 0.30) < 1e-9     # thumb_ip 位置值(0.30) 进入 index_yaw 槽
     assert out[15] == 0.0
 
 
@@ -296,6 +297,20 @@ def test_unknown_joint_name_rejected():
 def test_name_count_mismatch_rejected():
     out, reason = align_command([0.0] * 16, ["a", "b"])
     assert out is None and "name_dim_mismatch" in reason
+
+
+def test_out_of_spec_clamped_to_upper_boundary():
+    out, reason = align_command([2.5] * 16)   # 全部超出各关节上限 -> 夹到边界, 不拒绝
+    assert out is not None and reason == ""
+    np.testing.assert_allclose(out, JOINT_SPEC_LIMITS[:, 1])
+
+
+def test_negative_thumb_yaw_kept_within_lower_boundary():
+    pos = [0.0] * 16
+    pos[12] = -0.30   # thumb_yaw 合法负区间下边沿, 不应被夹走
+    out, reason = align_command(pos)
+    assert out is not None and reason == ""
+    assert out[12] == -0.30
 ```
 
 - [ ] **Step 2: 运行确认失败**
@@ -312,12 +327,23 @@ Expected: FAIL，`ModuleNotFoundError: tuinadex_hand.command_processing`
   - 维度 != 16
   - 含 NaN / Inf (脏值直通硬件 = 越界风险)
   - names 数量 != 16 或含未知关节名 (静默猜测对齐 = 错位风险)
+安全护栏: 合法但越界(相对 Spec §1 逐关节限位)的指令被夹到边界, 绝不把越界弧度写进电机路径。
 """
 from __future__ import annotations
 from typing import Optional, Sequence, Tuple
 import numpy as np
 
 from .driver.leap_driver import CANONICAL_JOINT_NAMES
+
+# 规范逐关节关节空间限位 (rad, 相对全开位 0) — 与 LEAP_HAND_MVP_INTERFACE_SPEC §1 一致。
+# 唯一事实源为 Spec §1; 此常量是电机路径的安全护栏 (clamp 门, Standards 交叉审查补齐),
+# 与离线 dataset.validator.SPEC_JOINT_LIMITS 同值且必须保持同步。
+JOINT_SPEC_LIMITS = np.array([
+    [-0.35, 0.35], [0.0, 2.00], [0.0, 1.85], [0.0, 1.80],   # index
+    [-0.35, 0.35], [0.0, 2.00], [0.0, 1.85], [0.0, 1.80],   # middle
+    [-0.35, 0.35], [0.0, 2.00], [0.0, 1.85], [0.0, 1.80],   # ring
+    [-0.30, 1.80], [0.0, 1.60], [0.0, 1.80], [0.0, 1.80],   # thumb
+], dtype=np.float64)
 
 
 def align_command(
@@ -350,13 +376,15 @@ def align_command(
             for src, n in enumerate(names):
                 ordered[name_to_idx[n]] = pos[src]
             q = ordered
+    # 安全护栏: 越界指令被夹到 Spec §1 逐关节限位边沿 (绝不把越界弧度传给电机)。
+    q = np.clip(q, JOINT_SPEC_LIMITS[:, 0], JOINT_SPEC_LIMITS[:, 1])
     return q, ""
 ```
 
 - [ ] **Step 4: 运行确认通过**
 
 Run: `~/win_office/conda/envs/leap_hand/bin/python -m pytest tests/test_command_processing.py -v`
-Expected: 7 passed
+Expected: 9 passed
 
 - [ ] **Step 5: Commit**
 
@@ -413,10 +441,7 @@ def rclpy_ctx():
 
 def test_mock_loop_and_watchdog(rclpy_ctx):
     """发布指令后 joint_states 跟随; 停发后看门狗平滑回 0 rad."""
-    from rclpy.parameter import Parameter
-    node = LeapHandNode()
-    node.set_parameters([Parameter(k, value=v) for k, v in FAST_PARAMS]
-                        is None or [])  # 参数需在构造期生效, 见下注
+    node = LeapHandNode(parameter_overrides=dict(FAST_PARAMS))
     node.destroy_node()
 ```
 
@@ -945,7 +970,6 @@ class RecorderNode(Node):
         self.declare_parameter("topics", ["/hand/joint_states", "/hand/joint_command"])
         self.declare_parameter(
             "topic_types",
-            ["/hand/joint_states", "/hand/joint_command"] and
             ["sensor_msgs/msg/JointState", "sensor_msgs/msg/JointState"])
         self.declare_parameter("bag_root", "bags")
 
@@ -976,9 +1000,10 @@ class RecorderNode(Node):
         for topic, ttype in zip(self._topics, self._types):
             writer.create_topic(rosbag2_py.TopicMetadata(
                 name=topic, type=ttype, serialization_format="cdr"))
+            # rclpy 签名: create_generic_subscription(msg_type, topic, callback, qos)
             self._subs.append(self.create_generic_subscription(
-                topic, ttype, 10,
-                lambda data, _t=topic: self._write(_t, data)))
+                ttype, topic,
+                lambda data, _t=topic: self._write(_t, data), 10))
         self._writer = writer
         self.get_logger().info(f"录制开始: {bag_dir}")
         response.success, response.message = True, bag_dir
@@ -1019,8 +1044,9 @@ if __name__ == "__main__":
     main()
 ```
 
-> 实现注：`topic_types` 声明行中 `and` 表达式是排版残留，落地时直接写
-> `self.declare_parameter("topic_types", ["sensor_msgs/msg/JointState", "sensor_msgs/msg/JointState"])`。
+> 实现注：`topic_types` 声明行原 `and` 排版残留已在交叉审查 retrofit 中直接改为正确字面量（见上方代码），落地无需再改。
+> 交叉审查修正：`create_generic_subscription` 实参顺序已改为 rclpy 的
+> `(msg_type, topic, callback, qos)`（原先 topic/type 颠倒会 TypeError）。
 
 - [ ] **Step 4: 测试通过 + 构建（Task 0 后）**
 
@@ -1255,14 +1281,15 @@ def save_to_lerobot(grid, states, actions, repo_id: str, fps: float = 50.0) -> s
             "names": {"joints": list(CANONICAL_JOINT_NAMES)}},
     }
     dataset = LeRobotDataset.create(repo_id=repo_id, fps=int(fps), features=features)
-    for i in range(len(grid)):
-        dataset.add_episode(
-            frame={
-                "observation.state": torch.from_numpy(states[i].astype(np.float32)),
-                "action": torch.from_numpy(actions[i].astype(np.float32)),
-                "timestamp": float(grid[i] - grid[0]),
-            },
-            task="teleoperation")
+    # 交叉审查修正: add_episode 为「整集批量」——一次调用传整段 (T,16) 数组,
+    # 产出 1 个 N 帧 episode; 原实现每帧调一次会炸成 N 个单帧 episode。
+    # 且 frame 键须 ⊆ features, 原未声明 timestamp 键会被 lerobot 校验拒收, 已删除。
+    dataset.add_episode(
+        frames={
+            "observation.state": torch.from_numpy(states.astype(np.float32)),
+            "action": torch.from_numpy(actions.astype(np.float32)),
+        },
+        task="teleoperation")
     return str(Path(repo_id))
 ```
 
@@ -1392,3 +1419,13 @@ git commit -m "feat(e2e): mock closed-loop check script; fixate verification com
 - **Spec 覆盖**: §1 逐关节限位 → Task 5；§2 双向转换 → 既有 driver 测试已覆盖（Phase 1）；§3 话题契约 → Task 3（节点）+ Task 6（录制双话题）；§4 LeRobot Schema（(16,) float32、50Hz 对齐、离线转换）→ Task 7。无遗漏。
 - **占位符扫描**: Task 6 的 `and` 排版残留已加实现注；Task 3/7 的实现注意与 API 实测步骤均为显式声明的验证步骤，非隐藏 TBD。
 - **类型一致性**: `align_command -> (Optional[np.ndarray], str)`、`WatchdogStateMachine.tick -> WatchdogAction`、`read_joint_state_bag -> ((N,), (N,16))`、`convert_bag_to_episode -> 5 元组` 在 Task 1/2/3/7/8 间交叉核对一致。
+
+### 交叉审查 retrofit 记录 (Phase 3 交接前, Claude Code 双轴审查注入)
+
+`two-axis-review` 双轴审查发现以下缺陷，已 retrofit 进上文处方代码，Codex 落地即得干净首版：
+
+- **Spec 轴缺陷 1 · Task 6**: `create_generic_subscription` 实参顺序错误（原 topic/type 颠倒）→ 已改为 rclpy 的 `(msg_type, topic, callback, qos)`。
+- **Spec 轴缺陷 2 · Task 3 Step 1**: `node.set_parameters([...] is None or [])` 为恒真/非法表达式，照抄静默空操作 → 已替换为推荐的 `LeapHandNode(parameter_overrides=dict(FAST_PARAMS))`。
+- **Spec 轴缺陷 3 · Task 7**: `save_to_lerobot`（i）frame 塞入未声明 `timestamp` 键（lerobot `add_episode` 校验键集会拒收）；(ii) 每帧调用 `add_episode` 会炸成 N 个单帧 episode → 已改为单次整集批量调用并删除 timestamp 键（`add_episode` 真实关键字仍按 Task 7 Step 1 实测签名为准）。
+- **Standards 护栏缺口 · Task 2**: 电机路径缺关节空间限位门（`SPEC_JOINT_LIMITS` 只在离线校验器）→ 新增 `command_processing.JOINT_SPEC_LIMITS`（与 Spec §1 同值同步）并在 `align_command` 内 `np.clip` 夹取，绝不把越界弧度写进电机；Task 2 测试 7→9 个。
+- **Standards 弱项（记录, 不作为阻断）**: `CANONICAL_JOINT_NAMES` 第 4 份副本（Task 7 adapter 为纯离线模块独立声明）、Task 3/6 重复 mian 生命周期、无标签 5 元组/`(ndarray,str)` 返回——均符合既有设计意图（`adapter` 头部明示不 import ROS 包），留作后续去重，不影响 Phase 3 落地正确性。
