@@ -14,13 +14,20 @@
 - [ ] **Phase 3: 手术级执行与交叉审查** (Codex 主导执行 · 改得准 + Claude Code 监督 - 按计划逐任务 TDD 落地 Task 0~8)
 - [ ] **Phase 4: 全局复核与文档闭环** (Antigravity 主导 · 看得广 - 全工程 colcon 构建、仿真/回环录制回放验证、文档与长程图谱归档)
 
-**当前进度**: Phase 3 待启动 (执行依据: `docs/superpowers/plans/2026-09-18-tuinadex-mvp-phase3.md`)
+**当前进度**: Phase 3 执行中 — Task 1~7 已完成本机可验证部分；Task 0 待用户授权 ROS2 安装，Task 8 依赖 Task 0
 
 ## 3. 协作推进记录与实证 (Completed Work & Evidence)
 | 时间 | 执行 Agent | 完成内容 | 验证依据 (测试命令 / 构建结果) | Git Commit |
 | :--- | :--- | :--- | :--- | :--- |
 | 2026-09-18 | Antigravity | 完成旧代码调研与 16-DOF 接口完全冻结，建立脚手架与规范，8项单元测试全绿 | 规范文档 `docs/specs/LEAP_HAND_MVP_INTERFACE_SPEC.md` | `d2a9767` |
 | 2026-09-18 | Claude Code | Phase 2 深度审计 + P0 遥操崩溃修复（`mapper.map()` → `map_keypoints_to_leap()`，新增 API 守卫测试）+ 四项架构裁决 + Phase 3 实施计划落盘 | 计划 `docs/superpowers/plans/2026-09-18-tuinadex-mvp-phase3.md`；`pytest tests/` 9/9 全绿（`leap_hand` conda env） | `77cb9ba` |
+| 2026-09-18 | Codex | Task 1: WatchdogStateMachine 纯类 FSM，TDD 红绿通过 | `pytest tests/test_watchdog_fsm.py -v` 5/5；全量 14/14 | `26cde3e` |
+| 2026-09-18 | Codex | Task 2: /hand/joint_command 严格校验与 Canonical 重排，TDD 红绿通过 | `pytest tests/test_command_processing.py -v` 7/7；全量 21/21 | `e5c24af` |
+| 2026-09-18 | Codex | Task 3: 手节点接入 FSM/节点时钟/安全关停；ROS2 集成测试待 Task 0 | 本机全量 21 passed + 1 skipped | `91196d1` |
+| 2026-09-18 | Codex | Task 4: 遥操利手过滤、重捕获滤波 reset、安全退出与资源释放 | 本机全量 24 passed + 1 skipped | `34b5a3a` |
+| 2026-09-18 | Codex | Task 5: 数据集校验器切换到规范逐关节限位 | `pytest tests/test_dataset_sync_validator.py -v` 4/4 | `2efeac2` |
+| 2026-09-18 | Codex | Task 6: tuinadex_recorder 进程内 rosbag2_py 采集包骨架与实现 | 本机全量 26 passed + 2 skipped；bag 落盘测试待 Task 0 | `3272b0b` |
+| 2026-09-18 | Codex | Task 7: rosbag2 → LeRobotDataset 离线适配器与 CLI；实测 LeRobot 0.4.4 使用 `lerobot.datasets` + `add_frame/save_episode` 而非计划中的 `add_episode` | 本机全量 26 passed + 3 skipped；全链测试待 Task 0 | `063b0c2` |
 
 ## 4. 核心技术决策与不变量 (Decisions & Invariants)
 - **不变量 1 (坐标与单位)**: ROS2 与 LeRobot 全链路强制 SI 单位弧度 (rad)。以实测校准后的 `OPEN_POSE`（全开平伸）为 0 rad 基准零位，手指屈伸弯曲为正 ($q > 0$)。
@@ -42,6 +49,8 @@
   2. 通读 `docs/superpowers/plans/2026-09-18-tuinadex-mvp-phase3.md`（唯一执行依据，含完整代码与 TDD 步骤），并查阅 `docs/specs/LEAP_HAND_MVP_INTERFACE_SPEC.md`；
   3. 按 Task 0 → 8 顺序逐任务执行，每任务一个 commit；Task 1/2/4/5 可立即在本机 TDD（测试环境见不变量 10），Task 0 为系统级 ROS2 安装须**先向用户报告再执行**；
   4. 每完成一个任务，在本文件第 3 节追加一行实证记录。
+- **当前阻塞点**: 已完成只读探测，Ubuntu 26.04.1 (Resolute) 未安装 `/opt/ros`、`ros2`、`colcon`、`rclpy`；`apt-cache search '^ros-[a-z]+-ros-base$'` 无候选，因为尚未添加 ROS apt 仓库。添加 apt 源并安装 ROS2 属系统级操作，必须先获用户批准。
+- **工作树与分支**: `/home/bright/win_office/ubantu_files/project/TuinaDex_v2.0/.worktrees/phase3-mvp-execution`，分支 `phase3-mvp-execution`；Task 1~7 提交已完成。
 - **未决疑问与风险提示**:
   - Ubuntu 26.04 对应的 ROS2 发行版名称需实证核实（apt 源 / docs.ros.org），禁止凭记忆写死；若无官方支持则回退 Docker 方案并报告用户；
   - 实机测试前需确保 `/dev/ttyUSB0` 拥有 dialout 读写权限（当前用户已在 dialout 组，设备未插时无该节点）；
