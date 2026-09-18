@@ -25,7 +25,7 @@ def synthetic_bag(tmp_path):
     w.open(StorageOptions(uri=bag_dir, storage_id="sqlite3"),
            ConverterOptions("cdr", "cdr"))
     for topic in ("/hand/joint_states", "/hand/joint_command"):
-        w.create_topic(TopicMetadata(name=topic, type="sensor_msgs/msg/JointState",
+        w.create_topic(TopicMetadata(id=0, name=topic, type="sensor_msgs/msg/JointState",
                                      serialization_format="cdr"))
 
     t0 = 1000  # 固定整秒起点

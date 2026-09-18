@@ -76,7 +76,7 @@ class LeapHandNode(Node):
         names = list(msg.name) if msg.name else None
         q, reason = align_command(msg.position, names)
         if q is None:
-            self.get_logger().warn(f"指令被拒绝 ({reason})，已丢弃。")
+            self.get_logger().warning(f"指令被拒绝 ({reason})，已丢弃。")
             return
         was_relaxing = self._fsm.state.name == "RELAXING"
         self._fsm.on_command(self._now())
@@ -97,7 +97,7 @@ class LeapHandNode(Node):
                 self.get_logger().error(f"写入指令异常: {e}")
         elif action is WatchdogAction.RELAX_STEP:
             if not self._relax_logged:
-                self.get_logger().warn(
+                self.get_logger().warning(
                     f"指令断流 > {self._fsm.timeout_sec * 1000:.0f}ms，"
                     "触发 Relax-to-OPEN 安全回退！")
                 self._relax_logged = True
@@ -131,7 +131,7 @@ class LeapHandNode(Node):
             time.sleep(self.dwell_sec)   # 让电机实际走到全开位
             self.driver.disconnect()
         except Exception as e:
-            self.get_logger().warn(f"关停清理异常: {e}")
+            self.get_logger().warning(f"关停清理异常: {e}")
         super().destroy_node()
 
 

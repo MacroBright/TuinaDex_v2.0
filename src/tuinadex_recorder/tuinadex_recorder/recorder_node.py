@@ -10,6 +10,7 @@ from pathlib import Path
 
 import rclpy
 from rclpy.node import Node
+from sensor_msgs.msg import JointState
 from std_srvs.srv import Trigger
 import rosbag2_py
 
@@ -48,12 +49,14 @@ class RecorderNode(Node):
             rosbag2_py.StorageOptions(uri=bag_dir, storage_id="sqlite3"),
             rosbag2_py.ConverterOptions(input_serialization_format="cdr",
                                         output_serialization_format="cdr"))
-        for topic, ttype in zip(self._topics, self._types):
+        for topic_id, (topic, ttype) in enumerate(zip(self._topics, self._types)):
             writer.create_topic(rosbag2_py.TopicMetadata(
-                name=topic, type=ttype, serialization_format="cdr"))
-            self._subs.append(self.create_generic_subscription(
-                topic, ttype, 10,
-                lambda data, _t=topic: self._write(_t, data)))
+                id=topic_id, name=topic, type=ttype, serialization_format="cdr"))
+            self._subs.append(self.create_subscription(
+                JointState, topic,
+                lambda data, _t=topic: self._write(_t, data), 10,
+                raw=True,
+            ))
         self._writer = writer
         self.get_logger().info(f"录制开始: {bag_dir}")
         response.success, response.message = True, bag_dir
