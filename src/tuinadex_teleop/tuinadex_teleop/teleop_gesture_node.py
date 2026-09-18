@@ -89,7 +89,7 @@ class TeleopGestureNode(Node):
         if results and len(results) > 0:
             hand = results[0]
             # 1. 映射为 16 维相对弧度 (0 为全开，>0 为弯曲)
-            raw_angles = self.mapper.map(hand)
+            raw_angles = self.mapper.map_keypoints_to_leap(hand)
             # 2. 1€ 滤波平滑
             filtered_angles = self.filter(raw_angles)
         else:
