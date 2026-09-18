@@ -21,6 +21,7 @@
 | :--- | :--- | :--- | :--- | :--- |
 | 2026-09-18 | Antigravity | 完成旧代码调研与 16-DOF 接口完全冻结，建立脚手架与规范，8项单元测试全绿 | 规范文档 `docs/specs/LEAP_HAND_MVP_INTERFACE_SPEC.md` | `d2a9767` |
 | 2026-09-18 | Claude Code | Phase 2 深度审计 + P0 遥操崩溃修复（`mapper.map()` → `map_keypoints_to_leap()`，新增 API 守卫测试）+ 四项架构裁决 + Phase 3 实施计划落盘 | 计划 `docs/superpowers/plans/2026-09-18-tuinadex-mvp-phase3.md`；`pytest tests/` 9/9 全绿（`leap_hand` conda env） | `77cb9ba` |
+| 2026-09-18 | Claude Code | Phase 3 交接前双轴交叉审查（`two-axis-review`）→ 按用户指令 retrofit 4 处缺陷进规划（Task 2 电机关节空间限位门 / Task 6 订阅参数顺序 / Task 3 ghost 表达式 / Task 7 lerobot 整集批量 + 去 timestamp 键） | 审查报告双轴分离；计划含「交叉审查 retrofit 记录」；Codex 落地即干净首版 | `8b74e04` |
 
 ## 4. 核心技术决策与不变量 (Decisions & Invariants)
 - **不变量 1 (坐标与单位)**: ROS2 与 LeRobot 全链路强制 SI 单位弧度 (rad)。以实测校准后的 `OPEN_POSE`（全开平伸）为 0 rad 基准零位，手指屈伸弯曲为正 ($q > 0$)。
@@ -33,6 +34,7 @@
 - **不变量 8 (采集器实现, Phase 2 用户拍板)**: `tuinadex_recorder` 采用 rosbag2_py 进程内节点 + `std_srvs/Trigger` 起停服务，严禁 subprocess 包装 `ros2 bag record`。
 - **不变量 9 (bag 反序列化, Phase 2 用户拍板)**: 依赖 ROS2 环境（本机安装 ROS2，Ubuntu 26.04 对应发行版），不写纯 Python CDR 解析器。Task 0 为系统级安装，执行前必须人工确认。
 - **不变量 10 (测试环境矩阵)**: 本地单元测试 = `leap_hand` conda env (`~/win_office/conda/envs/leap_hand/bin/python -m pytest tests/ -v`)；LeRobot 适配器测试 = `smolvla` env (lerobot 0.4.4)；ROS2 依赖测试用 `pytest.importorskip("rclpy")` 守护。
+- **不变量 11 (电机限位护栏, Phase 3 交叉审查注入)**: 电机路径 (`command_processing.align_command` → 驱动) 强制关节空间逐关节限位门 `JOINT_SPEC_LIMITS`（与 Spec §1 同值），越界指令 `np.clip` 夹到边界，绝不把越界弧度写进电机；与离线 `dataset.validator.SPEC_JOINT_LIMITS` 同源同步。
 
 ## 5. 接力指令 (Handoff to Next Agent)
 - **接手 Agent: Codex (Phase 3 手术级执行)**
