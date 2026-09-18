@@ -14,7 +14,7 @@
 - [ ] **Phase 3: 手术级执行与交叉审查** (Codex 主导执行 · 改得准 + Claude Code 监督 - 按计划逐任务 TDD 落地 Task 0~8)
 - [ ] **Phase 4: 全局复核与文档闭环** (Antigravity 主导 · 看得广 - 全工程 colcon 构建、仿真/回环录制回放验证、文档与长程图谱归档)
 
-**当前进度**: Phase 3 执行中 — Task 1~7 已完成本机可验证部分；Task 0 待用户授权 ROS2 安装，Task 8 依赖 Task 0
+**当前进度**: Phase 3 执行中 — Task 0~7 已完成；Task 8 端到端 mock 闭环待执行
 
 ## 3. 协作推进记录与实证 (Completed Work & Evidence)
 | 时间 | 执行 Agent | 完成内容 | 验证依据 (测试命令 / 构建结果) | Git Commit |
@@ -28,6 +28,8 @@
 | 2026-09-18 | Codex | Task 5: 数据集校验器切换到规范逐关节限位 | `pytest tests/test_dataset_sync_validator.py -v` 4/4 | `2efeac2` |
 | 2026-09-18 | Codex | Task 6: tuinadex_recorder 进程内 rosbag2_py 采集包骨架与实现 | 本机全量 26 passed + 2 skipped；bag 落盘测试待 Task 0 | `3272b0b` |
 | 2026-09-18 | Codex | Task 7: rosbag2 → LeRobotDataset 离线适配器与 CLI；实测 LeRobot 0.4.4 使用 `lerobot.datasets` + `add_frame/save_episode` 而非计划中的 `add_episode` | 本机全量 26 passed + 3 skipped；全链测试待 Task 0 | `063b0c2` |
+| 2026-09-18 | Codex | Task 0: ROS2 Lyrical Luth 环境配置；宿主机 sudo 需密码，采用官方 Docker 镜像 `ros:lyrical` 和 `scripts/ros2_docker.sh` | ROS 官方 index-v4.yaml 确认 `lyrical`；`ros2`、`rclpy`、`rosbag2_py`、`colcon` 可用；三包 colcon 构建成功 | `e22ae7d` |
+| 2026-09-18 | Codex | ROS2 Lyrical API 兼容修复：`logger.warning`、`TopicMetadata(id=...)`、`create_subscription(..., raw=True)` | 容器内 `test_leap_hand_node_integration.py` 与 `test_recorder_node.py` 2/2 全绿 | `23720c8` |
 
 ## 4. 核心技术决策与不变量 (Decisions & Invariants)
 - **不变量 1 (坐标与单位)**: ROS2 与 LeRobot 全链路强制 SI 单位弧度 (rad)。以实测校准后的 `OPEN_POSE`（全开平伸）为 0 rad 基准零位，手指屈伸弯曲为正 ($q > 0$)。
@@ -40,6 +42,7 @@
 - **不变量 8 (采集器实现, Phase 2 用户拍板)**: `tuinadex_recorder` 采用 rosbag2_py 进程内节点 + `std_srvs/Trigger` 起停服务，严禁 subprocess 包装 `ros2 bag record`。
 - **不变量 9 (bag 反序列化, Phase 2 用户拍板)**: 依赖 ROS2 环境（本机安装 ROS2，Ubuntu 26.04 对应发行版），不写纯 Python CDR 解析器。Task 0 为系统级安装，执行前必须人工确认。
 - **不变量 10 (测试环境矩阵)**: 本地单元测试 = `leap_hand` conda env (`~/win_office/conda/envs/leap_hand/bin/python -m pytest tests/ -v`)；LeRobot 适配器测试 = `smolvla` env (lerobot 0.4.4)；ROS2 依赖测试用 `pytest.importorskip("rclpy")` 守护。
+- **不变量 11 (ROS2 运行环境, Task 0 用户确认)**: ROS2 发行版为 Lyrical Luth；宿主机 sudo 需密码，故当前统一使用官方 Docker 镜像 `ros:lyrical`，通过 `scripts/ros2_docker.sh` 挂载项目并自动 source ROS2。不要混用不同发行版路径。
 
 ## 5. 接力指令 (Handoff to Next Agent)
 - **接手 Agent: Codex (Phase 3 手术级执行)**
@@ -49,7 +52,7 @@
   2. 通读 `docs/superpowers/plans/2026-09-18-tuinadex-mvp-phase3.md`（唯一执行依据，含完整代码与 TDD 步骤），并查阅 `docs/specs/LEAP_HAND_MVP_INTERFACE_SPEC.md`；
   3. 按 Task 0 → 8 顺序逐任务执行，每任务一个 commit；Task 1/2/4/5 可立即在本机 TDD（测试环境见不变量 10），Task 0 为系统级 ROS2 安装须**先向用户报告再执行**；
   4. 每完成一个任务，在本文件第 3 节追加一行实证记录。
-- **当前阻塞点**: 已完成只读探测，Ubuntu 26.04.1 (Resolute) 未安装 `/opt/ros`、`ros2`、`colcon`、`rclpy`；`apt-cache search '^ros-[a-z]+-ros-base$'` 无候选，因为尚未添加 ROS apt 仓库。添加 apt 源并安装 ROS2 属系统级操作，必须先获用户批准。
+- **当前交接指令**: 继续执行 Task 8：创建 `scripts/e2e_mock_check.sh`，在 `ros:lyrical` 容器内完成 mock 手节点 + recorder + 离线转换闭环；如 LeRobot 依赖无法在容器内运行，先实测并记录阻塞点，不得写自造 CDR 解析器。
 - **工作树与分支**: `/home/bright/win_office/ubantu_files/project/TuinaDex_v2.0/.worktrees/phase3-mvp-execution`，分支 `phase3-mvp-execution`；Task 1~7 提交已完成。
 - **未决疑问与风险提示**:
   - Ubuntu 26.04 对应的 ROS2 发行版名称需实证核实（apt 源 / docs.ros.org），禁止凭记忆写死；若无官方支持则回退 Docker 方案并报告用户；
