@@ -14,7 +14,7 @@
 - [ ] **Phase 3: 手术级执行与交叉审查** (Codex 主导执行 · 改得准 + Claude Code 监督 - 按计划逐任务 TDD 落地 Task 0~8)
 - [ ] **Phase 4: 全局复核与文档闭环** (Antigravity 主导 · 看得广 - 全工程 colcon 构建、仿真/回环录制回放验证、文档与长程图谱归档)
 
-**当前进度**: Phase 3 执行中 — Task 0~7 已完成；Task 8 端到端 mock 闭环待执行
+**当前进度**: Phase 3 Task 0~8 全部执行完成；待交叉审查与 Phase 4 全局复核
 
 ## 3. 协作推进记录与实证 (Completed Work & Evidence)
 | 时间 | 执行 Agent | 完成内容 | 验证依据 (测试命令 / 构建结果) | Git Commit |
@@ -30,6 +30,7 @@
 | 2026-09-18 | Codex | Task 7: rosbag2 → LeRobotDataset 离线适配器与 CLI；实测 LeRobot 0.4.4 使用 `lerobot.datasets` + `add_frame/save_episode` 而非计划中的 `add_episode` | 本机全量 26 passed + 3 skipped；全链测试待 Task 0 | `063b0c2` |
 | 2026-09-18 | Codex | Task 0: 按用户指定教程安装 ROS2 Lyrical Luth Desktop；安装官方 `ros2-apt-source 1.3.0~resolute`、`ros-lyrical-desktop 0.13.0`、`ros-dev-tools 1.0.3`，并固化 `~/.bashrc` source | `ros2`、`rclpy`、`rosbag2_py`、`colcon` 验证通过；talker/listener 实际收到 4 条消息 | `bc62a13` |
 | 2026-09-18 | Codex | ROS2 Lyrical API 兼容修复：`logger.warning`、`TopicMetadata(id=...)`、`create_subscription(..., raw=True)` | 容器内 `test_leap_hand_node_integration.py` 与 `test_recorder_node.py` 2/2 全绿 | `23720c8` |
+| 2026-09-18 | Codex | Task 8: 端到端 mock 闭环；新增 mock 指令发布器与 E2E 脚本，修复 `tuinadex_hand` 缺失 `__init__.py`，适配 LeRobot 0.4.4 `add_frame` 与 v3.0 数据文件布局 | `bash scripts/e2e_mock_check.sh` 输出 PASS；mock bag 转换 147 帧，LeRobot parquet 生成 | `3139e75` |
 
 ## 4. 核心技术决策与不变量 (Decisions & Invariants)
 - **不变量 1 (坐标与单位)**: ROS2 与 LeRobot 全链路强制 SI 单位弧度 (rad)。以实测校准后的 `OPEN_POSE`（全开平伸）为 0 rad 基准零位，手指屈伸弯曲为正 ($q > 0$)。
