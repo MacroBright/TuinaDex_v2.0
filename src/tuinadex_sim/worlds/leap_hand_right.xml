@@ -103,6 +103,16 @@
     <exclude body1="world" body2="thumb_pip"/>
     <exclude body1="world" body2="thumb_dip"/>
   </contact>
+  <!-- ============================================================================== -->
+  <!-- 执行器 KD 控制与力仿真参数 (Actuators / KD Gains & Limits)                     -->
+  <!-- ============================================================================== -->
+  <!--
+    每个关节采用 Position 执行器进行闭环伺服控制:
+    - kp (比例刚度系数 / Proportional Gain): 关节弹簧恢复刚度 (N·m/rad)。调大更硬更有力，调小更柔顺。
+    - kv (微分阻尼系数 / Derivative Gain, 即 KD): 关节速度阻尼 (N·m·s/rad)。调大抑制抖动和超调。
+    - ctrlrange: 允许指令输入弧度区间 [min, max]。
+    - 关节最大输出力矩: 上方各 <joint> 标签中的 actuatorfrcrange="-0.95 0.95" (N·m)。
+  -->
   <actuator>
     <position name="act_index_yaw" joint="index_yaw" kp="35.0" kv="1.5" ctrlrange="-0.35 0.35"/>
     <position name="act_index_mcp" joint="index_mcp" kp="35.0" kv="1.5" ctrlrange="0.00 2.00"/>
