@@ -2,6 +2,12 @@
 <mujoco model="leap_hand_right">
   <compiler angle="radian" meshdir="../meshes" autolimits="true"/>
   <option timestep="0.002" gravity="0 0 -9.81" integrator="implicitfast"/>
+  <!-- ============================================================================== -->
+  <!-- 全局执行器 KD 参数统一配置 (在此修改 kp/kv 即可覆盖全部 16 个电机)               -->
+  <!-- ============================================================================== -->
+  <default>
+    <position kp="35.0" kv="1.5"/>
+  </default>
   <asset>
     <mesh name="palm_lower" content_type="model/stl" file="../meshes/palm_lower.stl"/>
     <mesh name="mcp_joint" content_type="model/stl" file="../meshes/mcp_joint.stl"/>
@@ -104,31 +110,35 @@
     <exclude body1="world" body2="thumb_dip"/>
   </contact>
   <!-- ============================================================================== -->
-  <!-- 执行器 KD 控制与力仿真参数 (Actuators / KD Gains & Limits)                     -->
+  <!-- 执行器定义 (16 个关节已自动继承上方 default 的统一 kp 和 kv 参数)               -->
   <!-- ============================================================================== -->
   <!--
-    每个关节采用 Position 执行器进行闭环伺服控制:
-    - kp (比例刚度系数 / Proportional Gain): 关节弹簧恢复刚度 (N·m/rad)。调大更硬更有力，调小更柔顺。
-    - kv (微分阻尼系数 / Derivative Gain, 即 KD): 关节速度阻尼 (N·m·s/rad)。调大抑制抖动和超调。
-    - ctrlrange: 允许指令输入弧度区间 [min, max]。
-    - 关节最大输出力矩: 上方各 <joint> 标签中的 actuatorfrcrange="-0.95 0.95" (N·m)。
+    全部 16 个关节统一继承上方 <default> 中的 kp 与 kv。
+    如需单独针对某个手指微调，可在此处单独写 kp=".." kv=".." 覆盖全局默认值。
   -->
   <actuator>
-    <position name="act_index_yaw" joint="index_yaw" kp="35.0" kv="1.5" ctrlrange="-0.35 0.35"/>
-    <position name="act_index_mcp" joint="index_mcp" kp="35.0" kv="1.5" ctrlrange="0.00 2.00"/>
-    <position name="act_index_pip" joint="index_pip" kp="35.0" kv="1.5" ctrlrange="0.00 1.85"/>
-    <position name="act_index_dip" joint="index_dip" kp="35.0" kv="1.5" ctrlrange="0.00 1.80"/>
-    <position name="act_middle_yaw" joint="middle_yaw" kp="35.0" kv="1.5" ctrlrange="-0.35 0.35"/>
-    <position name="act_middle_mcp" joint="middle_mcp" kp="35.0" kv="1.5" ctrlrange="0.00 2.00"/>
-    <position name="act_middle_pip" joint="middle_pip" kp="35.0" kv="1.5" ctrlrange="0.00 1.85"/>
-    <position name="act_middle_dip" joint="middle_dip" kp="35.0" kv="1.5" ctrlrange="0.00 1.80"/>
-    <position name="act_ring_yaw" joint="ring_yaw" kp="35.0" kv="1.5" ctrlrange="-0.35 0.35"/>
-    <position name="act_ring_mcp" joint="ring_mcp" kp="35.0" kv="1.5" ctrlrange="0.00 2.00"/>
-    <position name="act_ring_pip" joint="ring_pip" kp="35.0" kv="1.5" ctrlrange="0.00 1.85"/>
-    <position name="act_ring_dip" joint="ring_dip" kp="35.0" kv="1.5" ctrlrange="0.00 1.80"/>
-    <position name="act_thumb_yaw" joint="thumb_yaw" kp="35.0" kv="1.5" ctrlrange="-0.30 1.80"/>
-    <position name="act_thumb_cmc" joint="thumb_cmc" kp="35.0" kv="1.5" ctrlrange="0.00 1.60"/>
-    <position name="act_thumb_mcp" joint="thumb_mcp" kp="35.0" kv="1.5" ctrlrange="0.00 1.80"/>
-    <position name="act_thumb_ip" joint="thumb_ip" kp="35.0" kv="1.5" ctrlrange="0.00 1.80"/>
+    <!-- 食指 4 关节 -->
+    <position name="act_index_yaw" joint="index_yaw" ctrlrange="-0.35 0.35"/>
+    <position name="act_index_mcp" joint="index_mcp" ctrlrange="0.00 2.00"/>
+    <position name="act_index_pip" joint="index_pip" ctrlrange="0.00 1.85"/>
+    <position name="act_index_dip" joint="index_dip" ctrlrange="0.00 1.80"/>
+
+    <!-- 中指 4 关节 -->
+    <position name="act_middle_yaw" joint="middle_yaw" ctrlrange="-0.35 0.35"/>
+    <position name="act_middle_mcp" joint="middle_mcp" ctrlrange="0.00 2.00"/>
+    <position name="act_middle_pip" joint="middle_pip" ctrlrange="0.00 1.85"/>
+    <position name="act_middle_dip" joint="middle_dip" ctrlrange="0.00 1.80"/>
+
+    <!-- 无名指 4 关节 -->
+    <position name="act_ring_yaw" joint="ring_yaw" ctrlrange="-0.35 0.35"/>
+    <position name="act_ring_mcp" joint="ring_mcp" ctrlrange="0.00 2.00"/>
+    <position name="act_ring_pip" joint="ring_pip" ctrlrange="0.00 1.85"/>
+    <position name="act_ring_dip" joint="ring_dip" ctrlrange="0.00 1.80"/>
+
+    <!-- 拇指 4 关节 -->
+    <position name="act_thumb_yaw" joint="thumb_yaw" ctrlrange="-0.30 1.80"/>
+    <position name="act_thumb_cmc" joint="thumb_cmc" ctrlrange="0.00 1.60"/>
+    <position name="act_thumb_mcp" joint="thumb_mcp" ctrlrange="0.00 1.80"/>
+    <position name="act_thumb_ip" joint="thumb_ip" ctrlrange="0.00 1.80"/>
   </actuator>
 </mujoco>
