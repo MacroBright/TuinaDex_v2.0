@@ -10,7 +10,7 @@ from __future__ import annotations
 from typing import Optional, Sequence, Tuple
 import numpy as np
 
-from .driver.leap_driver import CANONICAL_JOINT_NAMES
+from .names import CANONICAL_JOINT_NAMES
 
 
 # 规范逐关节关节空间限位 (rad, 相对全开位 0) — 与 LEAP_HAND_MVP_INTERFACE_SPEC §1 一致。

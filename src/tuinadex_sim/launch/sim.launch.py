@@ -20,6 +20,18 @@ def generate_launch_description():
         default_value="true",
         description="Whether to load full Tuina scene with bed and patient dummy",
     )
+    timeout_arg = DeclareLaunchArgument(
+        "watchdog_timeout_sec", default_value="0.30"
+    )
+    hold_arg = DeclareLaunchArgument(
+        "watchdog_hold_sec", default_value="0.30"
+    )
+    ramp_arg = DeclareLaunchArgument(
+        "watchdog_ramp_sec", default_value="0.60"
+    )
+    substeps_arg = DeclareLaunchArgument(
+        "physics_substeps", default_value="10"
+    )
 
     sim_node = Node(
         package="tuinadex_sim",
@@ -31,6 +43,10 @@ def generate_launch_description():
             {
                 "publish_rate_hz": LaunchConfiguration("publish_rate_hz"),
                 "use_scene_world": LaunchConfiguration("use_scene_world"),
+                "watchdog_timeout_sec": LaunchConfiguration("watchdog_timeout_sec"),
+                "watchdog_hold_sec": LaunchConfiguration("watchdog_hold_sec"),
+                "watchdog_ramp_sec": LaunchConfiguration("watchdog_ramp_sec"),
+                "physics_substeps": LaunchConfiguration("physics_substeps"),
             },
         ],
     )
@@ -38,5 +54,9 @@ def generate_launch_description():
     return LaunchDescription([
         rate_arg,
         scene_arg,
+        timeout_arg,
+        hold_arg,
+        ramp_arg,
+        substeps_arg,
         sim_node,
     ])

@@ -9,6 +9,10 @@ SRC = Path(__file__).resolve().parents[1] / "src" / "tuinadex_sim"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
+CORE = Path(__file__).resolve().parents[1] / "src" / "tuinadex_core"
+if str(CORE) not in sys.path:
+    sys.path.insert(0, str(CORE))
+
 try:
     import mujoco
 except ImportError:
@@ -71,6 +75,20 @@ def test_sim_bridge_control_step(scene_xml_path):
     assert abs(state.positions[0]) < 0.1
 
 
+def test_sim_bridge_position_command_stays_stable_and_converges(scene_xml_path):
+    bridge = MujocoSimBridge(scene_xml_path)
+    bridge.set_joint_targets([0.2] * 16)
+    bridge.step(750)
+    state = bridge.get_state()
+
+    assert np.all(np.isfinite(state.positions))
+    lower = np.asarray([bridge.model.jnt_range[jid, 0] for jid in bridge.joint_ids])
+    upper = np.asarray([bridge.model.jnt_range[jid, 1] for jid in bridge.joint_ids])
+    assert np.all(state.positions >= lower)
+    assert np.all(state.positions <= upper)
+    np.testing.assert_allclose(state.positions, 0.2, atol=0.02)
+
+
 def test_sim_bridge_reset(scene_xml_path):
     bridge = MujocoSimBridge(scene_xml_path)
     targets = np.zeros(16, dtype=np.float64)
@@ -82,3 +100,15 @@ def test_sim_bridge_reset(scene_xml_path):
     state = bridge.get_state()
     assert state.time == pytest.approx(0.0)
     assert np.allclose(state.positions, 0.0, atol=1e-3)
+
+
+def test_sim_bridge_timestep_override(scene_xml_path):
+    """physics_timestep 注入覆盖 XML 缺省值 (审查修复项 ②)."""
+    bridge = MujocoSimBridge(scene_xml_path, timestep=0.001)
+    assert bridge.timestep == pytest.approx(0.001)
+
+
+def test_sim_bridge_invalid_timestep_rejected(scene_xml_path):
+    """非正 timestep 必须被拒绝 (安全优先)."""
+    with pytest.raises(ValueError):
+        MujocoSimBridge(scene_xml_path, timestep=0.0)

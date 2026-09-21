@@ -10,22 +10,15 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Tuple
+from typing import List, Optional, Sequence
 import numpy as np
+
+from tuinadex_core.names import CANONICAL_JOINT_NAMES
 
 try:
     import mujoco
 except ImportError:
     mujoco = None
-
-# 与 Spec §1 保持一致的 Canonical 16-DOF Joint 命名
-CANONICAL_JOINT_NAMES = [
-    "index_yaw",  "index_mcp",  "index_pip",  "index_dip",
-    "middle_yaw", "middle_mcp", "middle_pip", "middle_dip",
-    "ring_yaw",   "ring_mcp",   "ring_pip",   "ring_dip",
-    "thumb_yaw",  "thumb_cmc",  "thumb_mcp",  "thumb_ip",
-]
-
 
 @dataclass
 class SimState:
@@ -38,7 +31,7 @@ class SimState:
 class MujocoSimBridge:
     """MuJoCo 物理动力学桥接器."""
 
-    def __init__(self, xml_path: str):
+    def __init__(self, xml_path: str, timestep: Optional[float] = None):
         if mujoco is None:
             raise RuntimeError("mujoco package is not installed.")
         if not os.path.exists(xml_path):
@@ -46,6 +39,12 @@ class MujocoSimBridge:
 
         self.xml_path = xml_path
         self.model = mujoco.MjModel.from_xml_path(xml_path)
+        if timestep is not None:
+            t = float(timestep)
+            if t <= 0:
+                raise ValueError(f"timestep must be > 0, got {timestep}")
+            # ROS2 参数注入的物理步长覆盖 XML 缺省值 (须在 MjData 创建前设置)。
+            self.model.opt.timestep = t
         self.data = mujoco.MjData(self.model)
 
         # 建立 Canonical Joint 映射
