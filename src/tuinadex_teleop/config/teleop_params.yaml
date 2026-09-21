@@ -1,0 +1,8 @@
+teleop_gesture_node:
+  ros__parameters:
+    camera_id: 0
+    publish_rate_hz: 50.0
+    show_preview: false
+    filter_min_cutoff: 1.0
+    filter_beta: 0.05
+    required_handedness: "any"
