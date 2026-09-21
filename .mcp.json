@@ -1,0 +1,15 @@
+{
+  "mcpServers": {
+    "ros2": {
+      "type": "stdio",
+      "command": "/home/bright/ros-mcp-server/.venv/bin/python",
+      "args": [
+        "/home/bright/ros-mcp-server/server.py"
+      ],
+      "env": {
+        "ROSBRIDGE_IP": "127.0.0.1",
+        "ROSBRIDGE_PORT": "9090"
+      }
+    }
+  }
+}

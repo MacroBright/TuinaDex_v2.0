@@ -6,9 +6,11 @@ import pytest
 
 rclpy = pytest.importorskip("rclpy")
 
-WORKSPACE_SRC = Path(__file__).resolve().parents[1] / "src" / "tuinadex_hand"
-if str(WORKSPACE_SRC) not in sys.path:
-    sys.path.insert(0, str(WORKSPACE_SRC))
+ROOT = Path(__file__).resolve().parents[1]
+for package in ("tuinadex_core", "tuinadex_hand"):
+    path = str(ROOT / "src" / package)
+    if path not in sys.path:
+        sys.path.insert(0, path)
 
 from sensor_msgs.msg import JointState
 from tuinadex_hand.leap_hand_node import LeapHandNode
