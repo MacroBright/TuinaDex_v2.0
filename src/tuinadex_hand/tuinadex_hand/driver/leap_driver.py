@@ -13,13 +13,7 @@ from dataclasses import dataclass
 from typing import List, Optional, Sequence, Tuple
 import numpy as np
 
-# Canonical 16-DOF Joint 命名
-CANONICAL_JOINT_NAMES = [
-    "index_yaw",  "index_mcp",  "index_pip",  "index_dip",
-    "middle_yaw", "middle_mcp", "middle_pip", "middle_dip",
-    "ring_yaw",   "ring_mcp",   "ring_pip",   "ring_dip",
-    "thumb_yaw",  "thumb_cmc",  "thumb_mcp",  "thumb_ip",
-]
+from tuinadex_core.names import CANONICAL_JOINT_NAMES
 
 # 舵机驱动方向符号映射表 (针对 LEAP Hand 右手 16 舵机)
 # 关节空间弯曲为正，对应舵机实际运动方向

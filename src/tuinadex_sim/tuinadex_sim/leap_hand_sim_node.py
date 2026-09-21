@@ -19,7 +19,8 @@ except ImportError:
     Node = object
     JointState = None
 
-from .sim_bridge import CANONICAL_JOINT_NAMES, MujocoSimBridge
+from tuinadex_core.names import CANONICAL_JOINT_NAMES
+from .sim_bridge import MujocoSimBridge
 
 
 class LeapHandSimNode(Node):

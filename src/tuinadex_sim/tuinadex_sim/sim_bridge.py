@@ -10,22 +10,15 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Tuple
+from typing import List, Optional, Sequence
 import numpy as np
+
+from tuinadex_core.names import CANONICAL_JOINT_NAMES
 
 try:
     import mujoco
 except ImportError:
     mujoco = None
-
-# 与 Spec §1 保持一致的 Canonical 16-DOF Joint 命名
-CANONICAL_JOINT_NAMES = [
-    "index_yaw",  "index_mcp",  "index_pip",  "index_dip",
-    "middle_yaw", "middle_mcp", "middle_pip", "middle_dip",
-    "ring_yaw",   "ring_mcp",   "ring_pip",   "ring_dip",
-    "thumb_yaw",  "thumb_cmc",  "thumb_mcp",  "thumb_ip",
-]
-
 
 @dataclass
 class SimState:

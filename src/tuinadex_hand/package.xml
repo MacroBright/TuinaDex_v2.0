@@ -9,6 +9,7 @@
 
   <depend>rclpy</depend>
   <depend>sensor_msgs</depend>
+  <depend>tuinadex_core</depend>
 
   <test_depend>pytest</test_depend>
 

@@ -3,11 +3,11 @@ import sys
 from pathlib import Path
 import pytest
 
-SRC = Path(__file__).resolve().parents[1] / "src" / "tuinadex_hand"
+SRC = Path(__file__).resolve().parents[1] / "src" / "tuinadex_core"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
-from tuinadex_hand.watchdog import (
+from tuinadex_core.watchdog import (
     WatchdogStateMachine, WatchdogState, WatchdogAction,
 )
 

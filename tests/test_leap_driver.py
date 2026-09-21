@@ -9,6 +9,10 @@ WORKSPACE_SRC = Path(__file__).resolve().parents[1] / "src" / "tuinadex_hand"
 if str(WORKSPACE_SRC) not in sys.path:
     sys.path.insert(0, str(WORKSPACE_SRC))
 
+WORKSPACE_CORE = Path(__file__).resolve().parents[1] / "src" / "tuinadex_core"
+if str(WORKSPACE_CORE) not in sys.path:
+    sys.path.insert(0, str(WORKSPACE_CORE))
+
 from tuinadex_hand.driver.leap_driver import (
     LeapHandDriver,
     CANONICAL_JOINT_NAMES,

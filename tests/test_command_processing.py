@@ -4,12 +4,12 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-SRC = Path(__file__).resolve().parents[1] / "src" / "tuinadex_hand"
+SRC = Path(__file__).resolve().parents[1] / "src" / "tuinadex_core"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
-from tuinadex_hand.command_processing import align_command, JOINT_SPEC_LIMITS
-from tuinadex_hand.driver.leap_driver import CANONICAL_JOINT_NAMES
+from tuinadex_core.command_processing import align_command, JOINT_SPEC_LIMITS
+from tuinadex_core.names import CANONICAL_JOINT_NAMES
 
 
 def test_valid_passthrough_canonical_order():

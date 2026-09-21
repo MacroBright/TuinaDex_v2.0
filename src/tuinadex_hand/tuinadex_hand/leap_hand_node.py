@@ -16,9 +16,10 @@ import rclpy
 from rclpy.node import Node
 from sensor_msgs.msg import JointState
 
-from tuinadex_hand.driver.leap_driver import LeapHandDriver, CANONICAL_JOINT_NAMES
-from tuinadex_hand.watchdog import WatchdogStateMachine, WatchdogAction
-from tuinadex_hand.command_processing import align_command
+from tuinadex_core.command_processing import align_command
+from tuinadex_core.names import CANONICAL_JOINT_NAMES
+from tuinadex_core.watchdog import WatchdogAction, WatchdogStateMachine
+from tuinadex_hand.driver.leap_driver import LeapHandDriver
 
 
 class LeapHandNode(Node):
