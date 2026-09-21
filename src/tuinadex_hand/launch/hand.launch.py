@@ -40,6 +40,11 @@ def generate_launch_description():
     physics_substeps_arg = DeclareLaunchArgument(
         "physics_substeps", default_value="10"
     )
+    gui_arg = DeclareLaunchArgument(
+        "gui",
+        default_value="false",
+        description="Launch MuJoCo 3D passive viewer window",
+    )
 
     hand_node = Node(
         package="tuinadex_hand",
@@ -70,6 +75,7 @@ def generate_launch_description():
                 "watchdog_hold_sec": LaunchConfiguration("watchdog_hold_sec"),
                 "watchdog_ramp_sec": LaunchConfiguration("watchdog_ramp_sec"),
                 "physics_substeps": LaunchConfiguration("physics_substeps"),
+                "gui": LaunchConfiguration("gui"),
             },
         ],
         condition=IfCondition(LaunchConfiguration("use_sim")),
@@ -79,6 +85,7 @@ def generate_launch_description():
         port_arg,
         mock_arg,
         use_sim_arg,
+        gui_arg,
         publish_rate_arg,
         use_scene_world_arg,
         watchdog_timeout_arg,

@@ -14,7 +14,8 @@ leap_hand_sim_node:
     watchdog_ramp_sec: 0.6            # 600ms 线性收敛到全开 0 rad
     physics_substeps: 10              # 每 20ms ROS tick 内 10 × 2ms = 500Hz 物理步进
     
-    # 场景资产配置
+    # 场景资产配置与可视化
     scene_file: "worlds/tuina_scene.xml"
     hand_only_file: "worlds/leap_hand_right.xml"
     use_scene_world: true             # true: 包含推拿床与假人, false: 纯灵巧手环境
+    gui: false                        # true: 启动 MuJoCo 被动 3D 可视化窗口, false: 无头运行

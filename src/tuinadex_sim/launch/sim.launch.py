@@ -32,6 +32,11 @@ def generate_launch_description():
     substeps_arg = DeclareLaunchArgument(
         "physics_substeps", default_value="10"
     )
+    gui_arg = DeclareLaunchArgument(
+        "gui",
+        default_value="false",
+        description="Launch MuJoCo 3D passive viewer window",
+    )
 
     sim_node = Node(
         package="tuinadex_sim",
@@ -47,6 +52,7 @@ def generate_launch_description():
                 "watchdog_hold_sec": LaunchConfiguration("watchdog_hold_sec"),
                 "watchdog_ramp_sec": LaunchConfiguration("watchdog_ramp_sec"),
                 "physics_substeps": LaunchConfiguration("physics_substeps"),
+                "gui": LaunchConfiguration("gui"),
             },
         ],
     )
@@ -58,5 +64,6 @@ def generate_launch_description():
         hold_arg,
         ramp_arg,
         substeps_arg,
+        gui_arg,
         sim_node,
     ])

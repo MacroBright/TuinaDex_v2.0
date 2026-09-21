@@ -54,6 +54,7 @@ class LeapHandSimNode(Node):
         declare("physics_substeps", 10)
         declare("command_topic", "/hand/joint_command")
         declare("state_topic", "/hand/joint_states")
+        declare("gui", False)
 
         self.rate_hz = float(gp("publish_rate_hz"))
         if self.rate_hz <= 0:
@@ -85,6 +86,20 @@ class LeapHandSimNode(Node):
             physics_substeps=int(gp("physics_substeps")),
         )
 
+        self.gui_enabled = bool(gp("gui"))
+        self.viewer = None
+        if self.gui_enabled:
+            if hasattr(bridge, "model") and hasattr(bridge, "data"):
+                try:
+                    import mujoco.viewer
+
+                    self.viewer = mujoco.viewer.launch_passive(bridge.model, bridge.data)
+                    self.get_logger().info("MuJoCo 被动 3D 可视化窗口 (GUI) 已启动。")
+                except Exception as e:
+                    self.get_logger().warning(f"无法启动 MuJoCo Viewer: {e}")
+            else:
+                self.get_logger().warning("Bridge 没有 model/data 属性，跳过启动 GUI。")
+
         self.state_pub = self.create_publisher(
             JointState, str(gp("state_topic")), 10
         )
@@ -115,6 +130,8 @@ class LeapHandSimNode(Node):
 
     def _control_loop(self) -> None:
         state = self.simulation_core.tick(self._now())
+        if self.viewer is not None and self.viewer.is_running():
+            self.viewer.sync()
         state_msg = JointState()
         state_msg.header.stamp = self.get_clock().now().to_msg()
         state_msg.name = list(CANONICAL_JOINT_NAMES)
@@ -122,6 +139,14 @@ class LeapHandSimNode(Node):
         state_msg.velocity = state.velocities.tolist()
         state_msg.effort = state.efforts.tolist()
         self.state_pub.publish(state_msg)
+
+    def destroy_node(self) -> bool:
+        if getattr(self, "viewer", None) is not None:
+            try:
+                self.viewer.close()
+            except Exception:
+                pass
+        return super().destroy_node()
 
 
 def main(args=None):

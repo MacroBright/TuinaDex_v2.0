@@ -117,7 +117,10 @@ source install/setup.bash
 
 #### 模式 1: MuJoCo 数字孪生仿真启动 (推荐验证模式)
 ```bash
-# 启动 MuJoCo 仿真环境 (包含中医推拿床与人体背部假人模型，发布 50Hz 仿真关节状态)
+# 1. 启动 MuJoCo 仿真环境并弹出 3D 实时可视化画面 (推荐手动联调使用)
+ros2 launch tuinadex_hand hand.launch.py use_sim:=true gui:=true
+
+# 2. 纯后台无头模式运行 (Headless, 适用于自动化脚本与 CI)
 ros2 launch tuinadex_hand hand.launch.py use_sim:=true
 ```
 

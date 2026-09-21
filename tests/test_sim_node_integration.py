@@ -160,3 +160,15 @@ def test_invalid_command_does_not_poison_state(ros_context):
         executor.remove_node(helper)
         node.destroy_node()
         helper.destroy_node()
+
+
+def test_gui_parameter_defaults_false_and_handles_fake_bridge(ros_context):
+    node = LeapHandSimNode(
+        parameter_overrides={"gui": False},
+        bridge=FakeBridge(),
+    )
+    try:
+        assert node.gui_enabled is False
+        assert node.viewer is None
+    finally:
+        node.destroy_node()

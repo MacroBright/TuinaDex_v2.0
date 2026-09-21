@@ -35,7 +35,7 @@
         <geom name="dummy_legs" type="box" size="0.35 0.16 0.07" pos="-0.45 0 0.75" material="dummy_skin"/>
       </body>
     </body>
-    <body name="leap_hand" pos="0.20 0 0.95" euler="3.14159 0 1.57079">
+    <body name="leap_hand" pos="0.20 0 0.95" euler="0 0 1.57079">
       <geom pos="-0.0200952 0.0257578 -0.0347224" quat="1 0 0 0" type="mesh" rgba="0.603922 0.14902 0.14902 1" mesh="palm_lower"/>
       <body name="mcp_joint" pos="-0.00709525 0.0230578 -0.0187224" quat="0.5 0.5 0.5 -0.5">
         <inertial pos="0 0 0" quat="0.388585 0.626468 -0.324549 0.592628" mass="0.044" diaginertia="1.47756e-05 1.31982e-05 6.0802e-06"/>
