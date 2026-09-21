@@ -9,6 +9,10 @@ SRC = Path(__file__).resolve().parents[1] / "src" / "tuinadex_sim"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
+CORE = Path(__file__).resolve().parents[1] / "src" / "tuinadex_core"
+if str(CORE) not in sys.path:
+    sys.path.insert(0, str(CORE))
+
 try:
     import mujoco
 except ImportError:
@@ -69,6 +73,20 @@ def test_sim_bridge_control_step(scene_xml_path):
     assert state.positions[1] > 0.3
     # 验证其余关节仍稳定在 0 附近
     assert abs(state.positions[0]) < 0.1
+
+
+def test_sim_bridge_position_command_stays_stable_and_converges(scene_xml_path):
+    bridge = MujocoSimBridge(scene_xml_path)
+    bridge.set_joint_targets([0.2] * 16)
+    bridge.step(750)
+    state = bridge.get_state()
+
+    assert np.all(np.isfinite(state.positions))
+    lower = np.asarray([bridge.model.jnt_range[jid, 0] for jid in bridge.joint_ids])
+    upper = np.asarray([bridge.model.jnt_range[jid, 1] for jid in bridge.joint_ids])
+    assert np.all(state.positions >= lower)
+    assert np.all(state.positions <= upper)
+    np.testing.assert_allclose(state.positions, 0.2, atol=0.02)
 
 
 def test_sim_bridge_reset(scene_xml_path):

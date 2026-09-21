@@ -18,6 +18,7 @@ TuinaDex 是面向中医推拿/按摩场景构建的具身智能机器人系统�
   - 当前宿主机为 Ubuntu 26.04 (Resolute)，已通过官方 ROS apt 源安装 `ros-lyrical-desktop` 和 `ros-dev-tools`。
   - `~/.bashrc` 已固化 `source /opt/ros/lyrical/setup.bash`。
   - `scripts/ros2_docker.sh` 仅作为官方 `ros:lyrical` 镜像的隔离回退环境，不再作为默认运行入口。
+  - 仿真/真机统一入口：`ros2 launch tuinadex_hand hand.launch.py use_sim:=true|false`。
 - **硬件通信协议**: 
   - LEAP Hand: Dynamixel Protocol 2.0 (USB-TTL, 波特率 4,000,000 bps, 位置-电流模式)
   - 机械臂 (后续): Linux SocketCAN (500 kbps)
@@ -74,3 +75,7 @@ TuinaDex 是面向中医推拿/按摩场景构建的具身智能机器人系统�
   `source /opt/ros/lyrical/setup.bash && colcon build --symlink-install --packages-select tuinadex_hand tuinadex_teleop tuinadex_recorder`
 - 无真机端到端闭环：
   `bash scripts/e2e_mock_check.sh`
+- MuJoCo 仿真节点集成测试：
+  `source /opt/ros/lyrical/setup.bash && python3 -m pytest tests/test_sim_node_integration.py -v`
+- MuJoCo 统一入口 E2E：
+  `bash scripts/e2e_sim_check.sh`

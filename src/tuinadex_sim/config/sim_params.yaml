@@ -10,6 +10,9 @@ leap_hand_sim_node:
     
     # 安全与看门狗
     watchdog_timeout_sec: 0.3         # 300ms 无指令回退至 Relax-to-OPEN
+    watchdog_hold_sec: 0.3            # 300ms 保持当前实测姿态
+    watchdog_ramp_sec: 0.6            # 600ms 线性收敛到全开 0 rad
+    physics_substeps: 10              # 每 20ms ROS tick 内 10 × 2ms = 500Hz 物理步进
     
     # 场景资产配置
     scene_file: "worlds/tuina_scene.xml"

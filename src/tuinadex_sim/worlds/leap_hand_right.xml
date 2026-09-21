@@ -1,6 +1,7 @@
 <?xml version="1.0" ?>
 <mujoco model="leap_hand_right">
   <compiler angle="radian" meshdir="../meshes" autolimits="true"/>
+  <option timestep="0.002" gravity="0 0 -9.81" integrator="implicitfast"/>
   <asset>
     <mesh name="palm_lower" content_type="model/stl" file="../meshes/palm_lower.stl"/>
     <mesh name="mcp_joint" content_type="model/stl" file="../meshes/mcp_joint.stl"/>
