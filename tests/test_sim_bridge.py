@@ -100,3 +100,15 @@ def test_sim_bridge_reset(scene_xml_path):
     state = bridge.get_state()
     assert state.time == pytest.approx(0.0)
     assert np.allclose(state.positions, 0.0, atol=1e-3)
+
+
+def test_sim_bridge_timestep_override(scene_xml_path):
+    """physics_timestep 注入覆盖 XML 缺省值 (审查修复项 ②)."""
+    bridge = MujocoSimBridge(scene_xml_path, timestep=0.001)
+    assert bridge.timestep == pytest.approx(0.001)
+
+
+def test_sim_bridge_invalid_timestep_rejected(scene_xml_path):
+    """非正 timestep 必须被拒绝 (安全优先)."""
+    with pytest.raises(ValueError):
+        MujocoSimBridge(scene_xml_path, timestep=0.0)

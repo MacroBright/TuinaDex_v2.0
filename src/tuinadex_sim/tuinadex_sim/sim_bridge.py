@@ -31,7 +31,7 @@ class SimState:
 class MujocoSimBridge:
     """MuJoCo 物理动力学桥接器."""
 
-    def __init__(self, xml_path: str):
+    def __init__(self, xml_path: str, timestep: Optional[float] = None):
         if mujoco is None:
             raise RuntimeError("mujoco package is not installed.")
         if not os.path.exists(xml_path):
@@ -39,6 +39,12 @@ class MujocoSimBridge:
 
         self.xml_path = xml_path
         self.model = mujoco.MjModel.from_xml_path(xml_path)
+        if timestep is not None:
+            t = float(timestep)
+            if t <= 0:
+                raise ValueError(f"timestep must be > 0, got {timestep}")
+            # ROS2 参数注入的物理步长覆盖 XML 缺省值 (须在 MjData 创建前设置)。
+            self.model.opt.timestep = t
         self.data = mujoco.MjData(self.model)
 
         # 建立 Canonical Joint 映射

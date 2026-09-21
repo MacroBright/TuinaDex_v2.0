@@ -75,7 +75,7 @@ class LeapHandSimNode(Node):
                     if os.path.isabs(relative_path)
                     else os.path.join(package_share, relative_path)
                 )
-            bridge = MujocoSimBridge(xml_path)
+            bridge = MujocoSimBridge(xml_path, timestep=float(gp("physics_timestep")))
 
         self.simulation_core = SimulationCore(
             bridge,
@@ -110,6 +110,7 @@ class LeapHandSimNode(Node):
         if q_target is None:
             self.get_logger().warning(f"指令被拒绝 ({reason})，已丢弃。")
             return
+        # 此处已校验/clamp 过；core.apply_command 按契约幂等复检一次，保证 core 独立可测。
         self.simulation_core.apply_command(q_target, t_now=self._now())
 
     def _control_loop(self) -> None:

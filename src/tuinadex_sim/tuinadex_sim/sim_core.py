@@ -71,13 +71,15 @@ class SimulationCore:
         return True
 
     def tick(self, t_now: float):
+        # 每周期取一次步进前状态 (目标裁决用)，步进后再取一次用于发布，共两次。
+        state = self.bridge.get_state()
         action = self._watchdog.tick(t_now)
         if action is WatchdogAction.WRITE:
             target = self._target_command
         elif action is WatchdogAction.RELAX_STEP:
-            target = self._relax.target(t_now, self.bridge.get_state().positions)
+            target = self._relax.target(t_now, state.positions)
         else:
-            target = self.bridge.get_state().positions
+            target = state.positions
 
         self.bridge.set_joint_targets(target)
         self.bridge.step(self.physics_substeps)
