@@ -15,6 +15,18 @@ import numpy as np
 from pathlib import Path
 from typing import List, Optional, Tuple
 
+try:
+    import mediapipe
+except ImportError:
+    import os
+    import sys
+
+    _candidate = os.path.expanduser(
+        "~/win_office/conda/envs/leap_hand/lib/python3.14/site-packages"
+    )
+    if os.path.isdir(_candidate) and _candidate not in sys.path:
+        sys.path.append(_candidate)
+
 from mediapipe import Image as MpImage
 from mediapipe import ImageFormat
 from mediapipe.tasks.python import BaseOptions

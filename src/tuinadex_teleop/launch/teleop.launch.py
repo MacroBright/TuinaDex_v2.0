@@ -20,11 +20,24 @@ def generate_launch_description():
         "handedness", default_value="any", description="Filter handedness: any, Right, Left"
     )
 
+    conda_site_packages = os.path.expanduser(
+        "~/win_office/conda/envs/leap_hand/lib/python3.14/site-packages"
+    )
+    extra_env = {}
+    if os.path.isdir(conda_site_packages):
+        current_pythonpath = os.environ.get("PYTHONPATH", "")
+        extra_env["PYTHONPATH"] = (
+            f"{conda_site_packages}:{current_pythonpath}"
+            if current_pythonpath
+            else conda_site_packages
+        )
+
     teleop_node = Node(
         package="tuinadex_teleop",
         executable="teleop_gesture_node",
         name="teleop_gesture_node",
         output="screen",
+        additional_env=extra_env,
         parameters=[
             default_config,
             {
