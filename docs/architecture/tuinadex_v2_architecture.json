@@ -1,0 +1,88 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "TuinaDex v2.0 系统架构与跨模块数据流",
+    "locale": "zh-CN",
+    "visual_preset": "editorial",
+    "quality_profile": "showcase",
+    "output": "tuinadex_v2_architecture.html",
+    "viewBox": [1120, 530],
+    "views": [
+      {
+        "id": "teleop-and-control",
+        "label": "视觉遥操与硬件控制",
+        "focus": ["teleop_cam", "teleop_node", "joint_cmd_topic", "runtime_node", "leap_hardware"],
+        "note": "操作员手势由 MediaPipe 解算为 16 维相对弧度，经 ROS2 指令流驱动 Dynamixel 舵机"
+      },
+      {
+        "id": "state-and-recording",
+        "label": "物理状态回读与示教捕获",
+        "focus": ["runtime_node", "joint_state_topic", "recorder_node", "rosbag_store"],
+        "note": "50Hz 定时同步回读舵机物理位姿，原汁原味记录至 rosbag2 事实源"
+      },
+      {
+        "id": "robot-learning-closed-loop",
+        "label": "具身学习与策略闭环",
+        "focus": ["rosbag_store", "dataset_adapter", "lerobot_dataset", "policy_node"],
+        "note": "离线完成时间网格插值与质量检验，生成 LeRobot 数据集并支持闭环策略重放"
+      }
+    ]
+  },
+  "components": [
+    { "id": "teleop_cam", "type": "external", "label": "操作员遥控相机", "sublabel": "RealSense / WebCam", "pos": [50, 40], "size": [150, 50] },
+    { "id": "teleop_node", "type": "frontend", "label": "视觉手势遥操节点", "sublabel": "tuinadex_teleop", "pos": [50, 170], "size": [150, 50], "tag": "MediaPipe + 1€" },
+    { "id": "joint_cmd_topic", "type": "messagebus", "label": "目标指令话题", "sublabel": "/hand/joint_command", "pos": [310, 170], "size": [160, 50], "tag": "16D rad" },
+    { "id": "runtime_node", "type": "backend", "label": "灵巧手运行时主控", "sublabel": "tuinadex_hand", "pos": [580, 170], "size": [160, 50], "tag": "50Hz + 看门狗" },
+    { "id": "leap_hardware", "type": "external", "label": "16-DOF 灵巧手硬件", "sublabel": "LEAP Hand (16 Motors)", "pos": [860, 170], "size": [160, 50], "tag": "Dynamixel 4Mbps" },
+    { "id": "joint_state_topic", "type": "messagebus", "label": "物理状态反馈话题", "sublabel": "/hand/joint_states", "pos": [580, 300], "size": [160, 50], "tag": "16D rad (50Hz)" },
+    { "id": "recorder_node", "type": "backend", "label": "示教数据采集节点", "sublabel": "tuinadex_recorder", "pos": [310, 300], "size": [160, 50] },
+    { "id": "rosbag_store", "type": "database", "label": "原始实验事实源", "sublabel": "rosbag2 (MCAP/SQLite)", "pos": [310, 430], "size": [160, 50], "tag": "Source of Truth" },
+    { "id": "dataset_adapter", "type": "backend", "label": "离线数据适配转换器", "sublabel": "tuinadex_dataset", "pos": [580, 430], "size": [160, 50], "tag": "50Hz 插值对齐" },
+    { "id": "lerobot_dataset", "type": "database", "label": "具身学习数据集", "sublabel": "LeRobotDataset v3", "pos": [860, 430], "size": [160, 50], "tag": "Parquet 特征表" },
+    { "id": "policy_node", "type": "backend", "label": "具身策略推理节点", "sublabel": "ACT / Diffusion Policy", "pos": [860, 300], "size": [160, 50], "tag": "自主推拿决策" }
+  ],
+  "boundaries": [
+    { "kind": "region", "label": "ROS2 机器人运行时域 (Robot Runtime Domain)", "wraps": ["teleop_node", "joint_cmd_topic", "runtime_node", "joint_state_topic", "recorder_node"] },
+    { "kind": "security-group", "label": "机器人具身学习与策略域 (Robot Learning Domain)", "wraps": ["dataset_adapter", "lerobot_dataset", "policy_node"] }
+  ],
+  "connections": [
+    { "id": "cam-to-teleop", "from": "teleop_cam", "to": "teleop_node", "label": "RGB 30Hz", "labelDy": 20 },
+    { "id": "teleop-to-cmd", "from": "teleop_node", "to": "joint_cmd_topic", "label": "发布绝对位置", "variant": "emphasis" },
+    { "id": "cmd-to-runtime", "from": "joint_cmd_topic", "to": "runtime_node", "label": "订阅指令" },
+    { "id": "runtime-to-hw", "from": "runtime_node", "to": "leap_hardware", "label": "4Mbps 串口", "variant": "emphasis" },
+    { "id": "runtime-to-state", "from": "runtime_node", "to": "joint_state_topic", "label": "发布实测状态", "labelDy": 20 },
+    { "id": "state-to-recorder", "from": "joint_state_topic", "to": "recorder_node", "label": "状态快照" },
+    { "id": "cmd-to-recorder", "from": "joint_cmd_topic", "to": "recorder_node", "label": "动作快照", "variant": "dashed", "labelDy": 20 },
+    { "id": "recorder-to-bag", "from": "recorder_node", "to": "rosbag_store", "label": "写入原始包", "labelDy": 20 },
+    { "id": "bag-to-adapter", "from": "rosbag_store", "to": "dataset_adapter", "label": "离线反序列化" },
+    { "id": "adapter-to-lerobot", "from": "dataset_adapter", "to": "lerobot_dataset", "label": "对齐导出", "variant": "emphasis" },
+    { "id": "dataset-to-policy", "from": "lerobot_dataset", "to": "policy_node", "label": "离线训练", "variant": "dashed", "labelDy": -20 }
+  ],
+  "cards": [
+    {
+      "dot": "emerald",
+      "title": "双域解耦 (Dual-Domain Decoupling)",
+      "items": [
+        "ROS2 Runtime 负责实时通信、50Hz 闭环控制与 300ms 安全看门狗",
+        "LeRobot 负责离线数据集治理与策略学习，绝不直接读写底层电机硬件"
+      ]
+    },
+    {
+      "dot": "cyan",
+      "title": "事实源契约 (Source of Truth)",
+      "items": [
+        "rosbag2 是唯一实验原始数据源，完整保留原始物理时间基与全量传感器状态",
+        "LeRobotDataset 由独立 adapter 离线生成，支持随时重定义动作空间与特征映射"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "接口规范 (Interface Invariants)",
+      "items": [
+        "坐标系全链路强制 SI 弧度制 (rad)，以标定全开平伸姿态为 0 rad 基准",
+        "Action 严格采用 16 维 absolute joint position，彻底杜绝增量累积漂移"
+      ]
+    }
+  ]
+}
