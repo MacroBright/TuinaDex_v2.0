@@ -18,7 +18,7 @@
 - [x] **Phase 3: 手术级执行与交叉审查** (Codex 主导执行 · 改得准 + Claude Code 监督 - 极速落地 `leap_hand_sim_node` 完整控制循环、`hand.launch.py` 统一切换、ROS2 仿真话题集成测试与端到端闭环验证)
 - [ ] **Phase 4: 全局复核与文档闭环** (Antigravity 主导 · 看得广 - 仿真/真机双模式全回归构建、多矩阵测试覆盖、更新项目 README 与架构文档闭环)
 
-**当前进度**: Phase 3 Task 1~4 已完成；`tuinadex_core` 单源化、`SimulationCore`/`LeapHandSimNode` 落地、统一 `use_sim` 切换与 MuJoCo E2E 通过。待 Claude Code 交叉审查后交 Antigravity Phase 4。
+**当前进度**: Phase 3 完成并通过 Claude Code 双轴交叉审查（Standards: 0 硬违规 / Spec: 0 行为错误），3 处轻微修复已落、`phase3-sim-execution` 已合入 master（合并后 47 passed + 6 skipped）。待 Antigravity Phase 4 全局复核与文档闭环。
 
 ## 3. 协作推进记录与实证 (Completed Work & Evidence)
 | 时间 | 执行 Agent | 完成内容 | 验证依据 (测试命令 / 构建结果) | Git Commit |
@@ -28,8 +28,9 @@
 | 2026-09-18 | Codex | 完成 Task 0~8 极速 TDD 落地与三环境矩阵，端到端 mock 闭环 147 帧 PASS | `pytest tests/` 全绿；`bash scripts/e2e_mock_check.sh` PASS | `bc62a13` ~ `360a305` |
 | 2026-09-18 | Antigravity | Phase 4 全局复核：全工程 `colcon build` 编译 3 包全过，沉淀 ADR 0001、README 与长程图谱 | `colcon build` 3包通过；测试矩阵全绿 | `71e92af`, `b17caa6` |
 | 2026-09-21 | Antigravity | **Phase 1: 广域侦察与资产规范**: 建立 `src/tuinadex_sim/` 功能包骨架；迁移 8 组 STL 网格；生成规范 16-DOF Canonical URDF；建立推拿床与人体假人 URDF；生成 `tuina_scene.xml` 与 `leap_hand_right.xml` 动力学场景；开发 `MujocoSimBridge` 纯逻辑模块并通过 5/5 单元测试；通过 4 功能包 `colcon build`；生成出版级架构图 `docs/architecture/tuinadex_sim_digital_twin.html`；沉淀知识图谱 | `python3 -m pytest tests/test_sim_bridge.py -v` (5 passed); `colcon build --packages-select tuinadex_hand tuinadex_teleop tuinadex_recorder tuinadex_sim` (4 passed); `archify validate/deliver` (9/9 passed) | `73a55b8` |
-| 2026-09-21 | Claude Code | **Phase 2: 深度规划与质量裁决**: 侦察 Phase 1 全部资产与 `tuinadex_hand` 可复用模块；识别 hand↔sim 循环依赖冲突并交用户拍板；三项架构裁决固化为 Invariant 16/17/18；落盘详细 Phase 3 实施计划 `docs/superpowers/plans/2026-09-21-tuinadex-sim-phase3.md`（4 Task：core 提取 / SimulationCore / 薄节点 / use_sim 切换+E2E） | 裁决经 AskUserQuestion 用户逐项拍板（3/3 采纳推荐）；计划文档落盘；黑板更新 | *(Phase 2 无代码变更，待 Commit)* |
+| 2026-09-21 | Claude Code | **Phase 2: 深度规划与质量裁决**: 侦察 Phase 1 全部资产与 `tuinadex_hand` 可复用模块；识别 hand↔sim 循环依赖冲突并交用户拍板；三项架构裁决固化为 Invariant 16/17/18；落盘详细 Phase 3 实施计划 `docs/superpowers/plans/2026-09-21-tuinadex-sim-phase3.md`（4 Task：core 提取 / SimulationCore / 薄节点 / use_sim 切换+E2E） | 裁决经 AskUserQuestion 用户逐项拍板（3/3 采纳推荐）；计划文档落盘；黑板更新 | `a9a62b1` |
 | 2026-09-21 | Codex | Phase 3 Task 1~4: 新建 `tuinadex_core` 单源化共享逻辑；实现 `SimulationCore` hold+ramp 回退与 500Hz 子步；实现 `LeapHandSimNode` 50Hz 单线程循环；增加 `use_sim` 统一入口和 `e2e_sim_check.sh`；将 MuJoCo 积分器固化为 `implicitfast` 修复模型失稳 | `pytest tests/` 45 passed + 6 skipped；ROS 集成 4 passed；5 包 `colcon build` 通过；`bash scripts/e2e_sim_check.sh` PASS（131 帧，median 19.98ms，收敛并回 OPEN） | `64d6cd7`, `ee30a7e`, `e7a9beb`, `bb8bcf0` |
+| 2026-09-21 | Claude Code | **Phase 3 双轴交叉审查 + 修复合入**: 并行双 sub-agent 审查（Standards 轴: 0 硬违规 + 3 判断题 smell + 1 文档缺口；Spec 轴: 0 行为错误，8 项重点核验全过）。经用户拍板"修复后合入"，完成 3 处轻微修复（tick 单次取状态 / `physics_timestep` 接入 bridge + 2 条新测试 / AGENTS.md build 行补新包），`phase3-sim-execution` 已合入 master | 修复分支 `72e3473`；合并 `1a5eab8`；合并后 `pytest tests/` **47 passed + 6 skipped** | `72e3473`, `1a5eab8` |
 
 ## 4. 核心技术决策与不变量 (Decisions & Invariants)
 - **不变量 1 (坐标与单位)**: ROS2 与 LeRobot 全链路强制 SI 单位弧度 (rad)。以实测校准后的 `OPEN_POSE`（全开平伸）为 0 rad 基准零位，手指屈伸弯曲为正 ($q > 0$)。
@@ -52,8 +53,12 @@
 - **不变量 18 (仿真回退保真, Phase 2 追加)**: 仿真端 Relax-to-OPEN 逐点复刻真机 `driver.relax_to_open_step`（`leap_driver.py:224-246`）：hold 期 (0.3s) 保持当前实测位姿 → ramp 期 (0.6s) 线性收敛 0 rad，基于实测关节位置、带 `_loss_t0`/`_relax_from_pos` 状态并由 `reset_loss_state()` 清挡。禁止瞬时跳变。
 
 ## 5. 接力指令 (Handoff to Next Agent)
-- **移交对象**: **Claude Code** (`想得深 · 双轴交叉审查`)
-- **下一阶段**: Phase 3 交叉审查，通过后移交 Antigravity 执行 Phase 4 全局复核与文档闭环。
-- **审查范围**: `phase3-sim-execution` 分支自 `a9a62b1` 以来的 Task 1~4 提交，重点核查 Invariant 16/17/18、ROS2 话题等价性、电机路径安全门、MuJoCo 时序稳定性与 launch 双模式切换。
-- **已固化验证命令**: 见 `AGENTS.md` §5；核心命令为 `pytest tests/`、ROS 集成测试、5 包 `colcon build`、`bash scripts/e2e_sim_check.sh`。
+- **移交对象**: **Antigravity** (`看得广 · 全局复核`)
+- **下一阶段**: **Phase 4: 全局复核与文档闭环**
+- **建议主责行动清单**:
+  1. 全工程回归：`colcon build --symlink-install --packages-select tuinadex_core tuinadex_hand tuinadex_teleop tuinadex_recorder tuinadex_sim`（5 包）+ 全测试矩阵（`AGENTS.md` §5 固化命令）；
+  2. 双模式启动复核：`ros2 launch tuinadex_hand hand.launch.py use_sim:=true` 与 `use_sim:=false mock:=true`；
+  3. 文档闭环：更新 README（`use_sim` 用法与 `tuinadex_core` 架构）、ADR（Phase 2 三项裁决 16/17/18）、知识图谱沉淀；
+  4. 归档：更新本黑板完成状态与 commit ID。
+- **审查结论存档**: Phase 3 双轴审查无阻断项；遗留判断题（launch 参数插线在 sim/hand 两 launch 文件成对重复 → 可提取共享片段）不阻断，可由 Phase 4 酌情处理或记入技术债。
 - **硬件红线**: 未获用户明确确认前，不得运行 `use_sim:=false mock:=false` 或连接真实 Dynamixel 总线。
