@@ -1,0 +1,87 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "TuinaDex v2.0 数字孪生仿真与真机统一控制架构",
+    "locale": "zh-CN",
+    "visual_preset": "editorial",
+    "quality_profile": "showcase",
+    "output": "tuinadex_sim_digital_twin.html",
+    "viewBox": [1320, 500],
+    "views": [
+      {
+        "id": "unified-switching",
+        "label": "统一启动与双模切换",
+        "focus": ["joint_cmd_topic", "dispatch_gate", "real_hand_node", "sim_hand_node", "joint_state_topic"],
+        "note": "上层节点零感知: 通过 use_sim:=true/false 无缝切换物理硬件与 MuJoCo 仿真"
+      },
+      {
+        "id": "mujoco-simulation-flow",
+        "label": "MuJoCo 动力学数字孪生",
+        "focus": ["sim_hand_node", "mujoco_scene", "joint_state_topic"],
+        "note": "500Hz 物理动力学步进，50Hz 降采样发布反馈，完整模拟关节接触与推拿床受力"
+      },
+      {
+        "id": "hardware-execution-flow",
+        "label": "真机物理硬件闭环",
+        "focus": ["real_hand_node", "leap_hardware", "joint_state_topic"],
+        "note": "4Mbps Dynamixel 串口通信，150mA 电流硬件限流门与 Watchdog 保护"
+      }
+    ]
+  },
+  "components": [
+    { "id": "teleop_node", "type": "frontend", "label": "视觉手势遥操节点", "sublabel": "tuinadex_teleop", "pos": [40, 140], "size": [150, 50], "tag": "MediaPipe" },
+    { "id": "policy_node", "type": "frontend", "label": "具身推拿策略节点", "sublabel": "ACT / Diffusion Policy", "pos": [40, 270], "size": [150, 50], "tag": "LeRobot" },
+    
+    { "id": "joint_cmd_topic", "type": "messagebus", "label": "统一目标指令话题", "sublabel": "/hand/joint_command", "pos": [230, 205], "size": [160, 50], "tag": "16D rad (50Hz)" },
+    { "id": "dispatch_gate", "type": "backend", "label": "模式调度选择门", "sublabel": "use_sim:=true/false", "pos": [430, 205], "size": [150, 50], "tag": "Zero-Perception" },
+    
+    { "id": "real_hand_node", "type": "backend", "label": "物理灵巧手运行时", "sublabel": "tuinadex_hand", "pos": [670, 110], "size": [150, 50], "tag": "use_sim:=false" },
+    { "id": "leap_hardware", "type": "external", "label": "16-DOF 灵巧手硬件", "sublabel": "LEAP Hand (16 Servos)", "pos": [870, 110], "size": [150, 50], "tag": "4Mbps / 150mA" },
+    
+    { "id": "sim_hand_node", "type": "backend", "label": "MuJoCo 仿真主控", "sublabel": "tuinadex_sim", "pos": [670, 300], "size": [150, 50], "tag": "use_sim:=true" },
+    { "id": "mujoco_scene", "type": "database", "label": "数字孪生推拿世界", "sublabel": "worlds/tuina_scene.xml", "pos": [870, 300], "size": [150, 50], "tag": "500Hz 刚体接触" },
+    
+    { "id": "joint_state_topic", "type": "messagebus", "label": "统一状态反馈话题", "sublabel": "/hand/joint_states", "pos": [1120, 205], "size": [160, 50], "tag": "16D rad (50Hz)" },
+    { "id": "recorder_node", "type": "backend", "label": "示教数据采集节点", "sublabel": "tuinadex_recorder", "pos": [1120, 70], "size": [160, 50], "tag": "rosbag2" }
+  ],
+  "boundaries": [
+    { "kind": "region", "label": "指令生成域 (Command Generation Domain)", "wraps": ["teleop_node", "policy_node", "joint_cmd_topic"] },
+    { "kind": "region", "label": "真实物理硬件分支 (Real Hardware Runtime)", "wraps": ["real_hand_node", "leap_hardware"] },
+    { "kind": "security-group", "label": "MuJoCo 数字孪生仿真分支 (Digital Twin Simulation)", "wraps": ["sim_hand_node", "mujoco_scene"] },
+    { "kind": "region", "label": "反馈与采集域 (Feedback & Recording Domain)", "wraps": ["joint_state_topic", "recorder_node"] }
+  ],
+  "connections": [
+    { "id": "teleop-to-cmd", "from": "teleop_node", "to": "joint_cmd_topic", "variant": "emphasis" },
+    { "id": "policy-to-cmd", "from": "policy_node", "to": "joint_cmd_topic", "variant": "dashed" },
+    { "id": "cmd-to-dispatch", "from": "joint_cmd_topic", "to": "dispatch_gate" },
+    
+    { "id": "dispatch-to-real", "from": "dispatch_gate", "to": "real_hand_node", "fromSide": "top", "toSide": "left", "label": "use_sim=false", "variant": "dashed" },
+    { "id": "real-to-hw", "from": "real_hand_node", "to": "leap_hardware", "variant": "emphasis" },
+    { "id": "hw-to-state", "from": "leap_hardware", "to": "joint_state_topic", "fromSide": "right", "toSide": "top", "label": "物理反馈", "labelSegment": 0, "labelDy": 15 },
+    
+    { "id": "dispatch-to-sim", "from": "dispatch_gate", "to": "sim_hand_node", "fromSide": "bottom", "toSide": "left", "label": "use_sim=true", "variant": "emphasis" },
+    { "id": "sim-to-scene", "from": "sim_hand_node", "to": "mujoco_scene", "variant": "emphasis" },
+    { "id": "scene-to-state", "from": "mujoco_scene", "to": "joint_state_topic", "fromSide": "right", "toSide": "bottom", "label": "仿真反馈", "variant": "emphasis", "labelSegment": 0, "labelDy": 10 },
+    
+    { "id": "state-to-recorder", "from": "joint_state_topic", "to": "recorder_node" }
+  ],
+  "cards": [
+    {
+      "dot": "emerald",
+      "title": "话题完全等价性 (Topic Parity)",
+      "items": [
+        "真机与仿真 100% 共享 /hand/joint_command 与 /hand/joint_states 接口",
+        "全链路统一使用 16 维 Canonical Joint 顺序 (rad)，0 为全开平伸基准"
+      ]
+    },
+    {
+      "dot": "cyan",
+      "title": "双速率物理时钟与看门狗",
+      "items": [
+        "MuJoCo 采用 500Hz (2ms) 微积分步长保证接触数值稳定，50Hz 降采样发布",
+        "两端均内置 300ms Watchdog，失联时平滑回退至全开平伸 (Relax-to-OPEN)"
+      ]
+    }
+  ]
+}

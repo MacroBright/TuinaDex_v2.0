@@ -1,0 +1,17 @@
+leap_hand_sim_node:
+  ros__parameters:
+    # 物理步长与时钟
+    physics_timestep: 0.002           # 500 Hz MuJoCo 动力学步长
+    publish_rate_hz: 50.0             # 50 Hz ROS2 通信降采样发布频率 (与真机 20ms 一致)
+    
+    # 通信话题契约 (与真机 100% 相同)
+    command_topic: "/hand/joint_command"
+    state_topic: "/hand/joint_states"
+    
+    # 安全与看门狗
+    watchdog_timeout_sec: 0.3         # 300ms 无指令回退至 Relax-to-OPEN
+    
+    # 场景资产配置
+    scene_file: "worlds/tuina_scene.xml"
+    hand_only_file: "worlds/leap_hand_right.xml"
+    use_scene_world: true             # true: 包含推拿床与假人, false: 纯灵巧手环境

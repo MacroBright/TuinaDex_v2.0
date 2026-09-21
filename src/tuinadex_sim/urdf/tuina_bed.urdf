@@ -1,0 +1,160 @@
+<?xml version="1.0" ?>
+<robot name="tuina_bed">
+  <!-- Tuina Massage Bed and Patient Dummy URDF for TuinaDex Simulation -->
+  
+  <material name="frame_material">
+    <color rgba="0.25 0.25 0.28 1.0"/>
+  </material>
+
+  <material name="mattress_material">
+    <color rgba="0.18 0.42 0.70 1.0"/>
+  </material>
+
+  <material name="dummy_material">
+    <color rgba="0.88 0.75 0.63 1.0"/>
+  </material>
+
+  <!-- World Base -->
+  <link name="world"/>
+
+  <!-- Bed Frame -->
+  <link name="bed_frame">
+    <visual>
+      <origin xyz="0 0 0.30" rpy="0 0 0"/>
+      <geometry>
+        <box size="1.90 0.75 0.60"/>
+      </geometry>
+      <material name="frame_material"/>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0.30" rpy="0 0 0"/>
+      <geometry>
+        <box size="1.90 0.75 0.60"/>
+      </geometry>
+    </collision>
+    <inertial>
+      <origin xyz="0 0 0.30" rpy="0 0 0"/>
+      <mass value="45.0"/>
+      <inertia ixx="2.5" ixy="0" ixz="0" iyy="14.0" iyz="0" izz="15.0"/>
+    </inertial>
+  </link>
+
+  <joint name="world_to_bed_frame" type="fixed">
+    <parent link="world"/>
+    <child link="bed_frame"/>
+    <origin xyz="0 0 0" rpy="0 0 0"/>
+  </joint>
+
+  <!-- Bed Mattress -->
+  <link name="bed_mattress">
+    <visual>
+      <origin xyz="0 0 0.64" rpy="0 0 0"/>
+      <geometry>
+        <box size="1.90 0.75 0.08"/>
+      </geometry>
+      <material name="mattress_material"/>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0.64" rpy="0 0 0"/>
+      <geometry>
+        <box size="1.90 0.75 0.08"/>
+      </geometry>
+    </collision>
+    <inertial>
+      <origin xyz="0 0 0.64" rpy="0 0 0"/>
+      <mass value="15.0"/>
+      <inertia ixx="0.7" ixy="0" ixz="0" iyy="4.5" iyz="0" izz="5.0"/>
+    </inertial>
+  </link>
+
+  <joint name="bed_frame_to_mattress" type="fixed">
+    <parent link="bed_frame"/>
+    <child link="bed_mattress"/>
+    <origin xyz="0 0 0" rpy="0 0 0"/>
+  </joint>
+
+  <!-- Patient Dummy - Torso (Primary massage target area) -->
+  <link name="dummy_torso">
+    <visual>
+      <origin xyz="0.20 0 0.78" rpy="0 0 0"/>
+      <geometry>
+        <box size="0.60 0.36 0.18"/>
+      </geometry>
+      <material name="dummy_material"/>
+    </visual>
+    <collision>
+      <origin xyz="0.20 0 0.78" rpy="0 0 0"/>
+      <geometry>
+        <box size="0.60 0.36 0.18"/>
+      </geometry>
+    </collision>
+    <inertial>
+      <origin xyz="0.20 0 0.78" rpy="0 0 0"/>
+      <mass value="28.0"/>
+      <inertia ixx="0.35" ixy="0" ixz="0" iyy="0.90" iyz="0" izz="1.10"/>
+    </inertial>
+  </link>
+
+  <joint name="mattress_to_torso" type="fixed">
+    <parent link="bed_mattress"/>
+    <child link="dummy_torso"/>
+    <origin xyz="0 0 0" rpy="0 0 0"/>
+  </joint>
+
+  <!-- Patient Dummy - Head -->
+  <link name="dummy_head">
+    <visual>
+      <origin xyz="0.65 0 0.79" rpy="0 0 0"/>
+      <geometry>
+        <sphere radius="0.11"/>
+      </geometry>
+      <material name="dummy_material"/>
+    </visual>
+    <collision>
+      <origin xyz="0.65 0 0.79" rpy="0 0 0"/>
+      <geometry>
+        <sphere radius="0.11"/>
+      </geometry>
+    </collision>
+    <inertial>
+      <origin xyz="0.65 0 0.79" rpy="0 0 0"/>
+      <mass value="4.5"/>
+      <inertia ixx="0.02" ixy="0" ixz="0" iyy="0.02" iyz="0" izz="0.02"/>
+    </inertial>
+  </link>
+
+  <joint name="torso_to_head" type="fixed">
+    <parent link="dummy_torso"/>
+    <child link="dummy_head"/>
+    <origin xyz="0 0 0" rpy="0 0 0"/>
+  </joint>
+
+  <!-- Patient Dummy - Pelvis & Legs -->
+  <link name="dummy_legs">
+    <visual>
+      <origin xyz="-0.45 0 0.76" rpy="0 0 0"/>
+      <geometry>
+        <box size="0.70 0.32 0.14"/>
+      </geometry>
+      <material name="dummy_material"/>
+    </visual>
+    <collision>
+      <origin xyz="-0.45 0 0.76" rpy="0 0 0"/>
+      <geometry>
+        <box size="0.70 0.32 0.14"/>
+      </geometry>
+    </collision>
+    <inertial>
+      <origin xyz="-0.45 0 0.76" rpy="0 0 0"/>
+      <mass value="22.0"/>
+      <inertia ixx="0.2" ixy="0" ixz="0" iyy="0.9" iyz="0" izz="1.0"/>
+    </inertial>
+  </link>
+
+  <joint name="torso_to_legs" type="fixed">
+    <parent link="dummy_torso"/>
+    <child link="dummy_legs"/>
+    <origin xyz="0 0 0" rpy="0 0 0"/>
+  </joint>
+
+</robot>
