@@ -117,4 +117,22 @@ def test_task4_data_docker_and_script():
     assert res.returncode == 0, f"Syntax error in run_data_convert.sh: {res.stderr}"
 
 
+def test_task5_vla_cloud_docker_and_script():
+    """Verify Task 5 cloud VLA Dockerfile and launch script."""
+    dockerfile = REPO_ROOT / "docker" / "vla_cloud.Dockerfile"
+    script = REPO_ROOT / "scripts" / "launch_vla_cloud.sh"
+
+    assert dockerfile.exists(), "docker/vla_cloud.Dockerfile does not exist"
+    df_content = dockerfile.read_text()
+    assert "nvidia/cuda" in df_content, "Missing nvidia/cuda base in vla_cloud.Dockerfile"
+    assert "grpc" in df_content.lower(), "Missing grpc dependency in vla_cloud.Dockerfile"
+    assert "EXPOSE" in df_content, "Missing EXPOSE directive in vla_cloud.Dockerfile"
+
+    assert script.exists(), "scripts/launch_vla_cloud.sh does not exist"
+    assert os.access(script, os.X_OK), "scripts/launch_vla_cloud.sh is not executable"
+    res = subprocess.run(["bash", "-n", str(script)], capture_output=True, text=True)
+    assert res.returncode == 0, f"Syntax error in launch_vla_cloud.sh: {res.stderr}"
+
+
+
 
