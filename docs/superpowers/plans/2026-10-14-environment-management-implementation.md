@@ -30,11 +30,11 @@
 **Interfaces:**
 - Produces: `scripts/env/cyclonedds.xml`, 环境变量 `RMW_IMPLEMENTATION=rmw_cyclonedds_cpp`, `ROS_DOMAIN_ID=42`.
 
-- [ ] **Step 1: 编写测试用例 `tests/test_env_management.py` (验证脚本存在与执行权限)**
-- [ ] **Step 2: 运行测试验证失败**
-- [ ] **Step 3: 实现 `scripts/env/setup_cyclonedds.sh` 与 `scripts/env/check_env.sh`**
-- [ ] **Step 4: 运行测试验证通过**
-- [ ] **Step 5: 提交 Task 1 代码**
+- [x] **Step 1: 编写测试用例 `tests/test_env_management.py` (验证脚本存在与执行权限)**
+- [x] **Step 2: 运行测试验证失败**
+- [x] **Step 3: 实现 `scripts/env/setup_cyclonedds.sh` 与 `scripts/env/check_env.sh`**
+- [x] **Step 4: 运行测试验证通过**
+- [x] **Step 5: 提交 Task 1 代码**
 
 ---
 
@@ -47,11 +47,11 @@
 **Interfaces:**
 - Produces: udev 别名 `/dev/tuinadex_hand`，SocketCAN 用户组权限，Conda/ROS 基础依赖检查。
 
-- [ ] **Step 1: 在 `tests/test_env_management.py` 中增加 udev 与 init_dev_pc 验证用例**
-- [ ] **Step 2: 运行测试验证失败**
-- [ ] **Step 3: 编写 `99-tuinadex-devices.rules` 与 `init_dev_pc.sh`**
-- [ ] **Step 4: 运行测试验证通过**
-- [ ] **Step 5: 提交 Task 2 代码**
+- [x] **Step 1: 在 `tests/test_env_management.py` 中增加 udev 与 init_dev_pc 验证用例**
+- [x] **Step 2: 运行测试验证失败**
+- [x] **Step 3: 编写 `99-tuinadex-devices.rules` 与 `init_dev_pc.sh`**
+- [x] **Step 4: 运行测试验证通过**
+- [x] **Step 5: 提交 Task 2 代码**
 
 ---
 
@@ -64,11 +64,11 @@
 **Interfaces:**
 - Produces: 开机自启 systemd CAN 服务 `tuinadex-can.service`，香橙派 ROS 2 Humble 与 CANN 依赖检测。
 
-- [ ] **Step 1: 在 `tests/test_env_management.py` 中增加 systemd 服务与 init_orangepi 验证用例**
-- [ ] **Step 2: 运行测试验证失败**
-- [ ] **Step 3: 编写 `tuinadex-can.service` 与 `init_orangepi.sh`**
-- [ ] **Step 4: 运行测试验证通过**
-- [ ] **Step 5: 提交 Task 3 代码**
+- [x] **Step 1: 在 `tests/test_env_management.py` 中增加 systemd 服务与 init_orangepi 验证用例**
+- [x] **Step 2: 运行测试验证失败**
+- [x] **Step 3: 编写 `tuinadex-can.service` 与 `init_orangepi.sh`**
+- [x] **Step 4: 运行测试验证通过**
+- [x] **Step 5: 提交 Task 3 代码**
 
 ---
 
@@ -81,11 +81,11 @@
 **Interfaces:**
 - Produces: 镜像 `tuinadex-data:v2.0`，一键运行脚本 `scripts/run_data_convert.sh`。
 
-- [ ] **Step 1: 在 `tests/test_env_management.py` 中增加 data.Dockerfile 语法校验测试**
-- [ ] **Step 2: 运行测试验证失败**
-- [ ] **Step 3: 编写 `docker/data.Dockerfile` 与 `scripts/run_data_convert.sh`**
-- [ ] **Step 4: 运行测试验证通过**
-- [ ] **Step 5: 提交 Task 4 代码**
+- [x] **Step 1: 在 `tests/test_env_management.py` 中增加 data.Dockerfile 语法校验测试**
+- [x] **Step 2: 运行测试验证失败**
+- [x] **Step 3: 编写 `docker/data.Dockerfile` 与 `scripts/run_data_convert.sh`**
+- [x] **Step 4: 运行测试验证通过**
+- [x] **Step 5: 提交 Task 4 代码**
 
 ---
 
@@ -98,11 +98,11 @@
 **Interfaces:**
 - Produces: 镜像 `tuinadex-vla:latest`，启动命令 `scripts/launch_vla_cloud.sh`。
 
-- [ ] **Step 1: 在 `tests/test_env_management.py` 中增加 vla_cloud.Dockerfile 语法校验测试**
-- [ ] **Step 2: 运行测试验证失败**
-- [ ] **Step 3: 编写 `docker/vla_cloud.Dockerfile` 与 `scripts/launch_vla_cloud.sh`**
-- [ ] **Step 4: 运行测试验证通过**
-- [ ] **Step 5: 提交 Task 5 代码**
+- [x] **Step 1: 在 `tests/test_env_management.py` 中增加 vla_cloud.Dockerfile 语法校验测试**
+- [x] **Step 2: 运行测试验证失败**
+- [x] **Step 3: 编写 `docker/vla_cloud.Dockerfile` 与 `scripts/launch_vla_cloud.sh`**
+- [x] **Step 4: 运行测试验证通过**
+- [x] **Step 5: 提交 Task 5 代码**
 
 ---
 
@@ -115,7 +115,7 @@
 **Interfaces:**
 - Produces: 一键运行完整健康检查报告与自动化回归。
 
-- [ ] **Step 1: 完善 `tests/test_env_management.py` 覆盖所有脚本和配置文件**
-- [ ] **Step 2: 编写 `scripts/verify_all_envs.sh` 并赋予可执行权限**
-- [ ] **Step 3: 运行完整测试套件验证全绿**
-- [ ] **Step 4: 提交 Task 6 代码与全景验证**
+- [x] **Step 1: 完善 `tests/test_env_management.py` 覆盖所有脚本和配置文件**
+- [x] **Step 2: 编写 `scripts/verify_all_envs.sh` 并赋予可执行权限**
+- [x] **Step 3: 运行完整测试套件验证全绿**
+- [x] **Step 4: 提交 Task 6 代码与全景验证**
