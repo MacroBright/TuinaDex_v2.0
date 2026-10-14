@@ -52,17 +52,19 @@
 - **不变量 16 (仿真单线程时序, Phase 2 追加)**: 仿真节点采用**单线程 50Hz ROS2 Timer**，每 tick 内锁步进 `mj_step` 共 10 次 (`10 × 0.002s = 20ms`)，即严格 500Hz 物理积分、50Hz 采样点发布。禁止后台物理线程（零竞态、确定性、与真机 50Hz 逐点对齐）。
 - **不变量 17 (共享纯逻辑包 + 依赖 DAG, Phase 2 追加)**: 纯逻辑 `watchdog.py` / `command_processing.py` / `JOINT_SPEC_LIMITS` / `CANONICAL_JOINT_NAMES` 下沉到新低层包 `tuinadex_core`（`CANONICAL_JOINT_NAMES` 在此单源化，删除 `sim_bridge.py` 与 `driver.leap_driver.py` 的复制）。`tuinadex_hand` 与 `tuinadex_sim` 均依赖 `tuinadex_core`。依赖收敛为无环 DAG：`hand→sim→core`、`hand→core`，**禁止 hand↔sim 循环依赖**。
 - **不变量 18 (仿真回退保真, Phase 2 追加)**: 仿真端 Relax-to-OPEN 逐点复刻真机 `driver.relax_to_open_step`（`leap_driver.py:224-246`）：hold 期 (0.3s) 保持当前实测位姿 → ramp 期 (0.6s) 线性收敛 0 rad，基于实测关节位置、带 `_loss_t0`/`_relax_from_pos` 状态并由 `reset_loss_state()` 清挡。禁止瞬时跳变。
+- **不变量 19 (跨端 CycloneDDS 基线, 2026-10-14 追加)**: 跨设备通信（本地 PC 26.04 Lyrical 与香橙派 22.04 Humble）全网强制锁定 `Eclipse CycloneDDS` (`RMW_IMPLEMENTATION=rmw_cyclonedds_cpp`)，统一 `ROS_DOMAIN_ID=42`，网络仅允许传输 ROS 2 标准消息类型 (`sensor_msgs`, `geometry_msgs`, `std_msgs`)，严禁跨版本传输非标自定义消息。
+- **不变量 20 (三端异构职责自治, 2026-10-14 追加)**: 架构严格分为三端：云端 GPU (VLA 推理推流 + 策略训练)；香橙派 AI Pro 20T (30fps NPU 穴位感知 + SocketCAN 臂/USB 手控制中枢 + 300ms 本地看门狗)；本地 PC (专家示教采集 + MuJoCo 仿真 + 自动化测试)。
+- **不变量 21 (Action Chunking 动作推流与超时熔断, 2026-10-14 追加)**: 云端至香橙派采用 gRPC/Zenoh Action Chunking 协议，香橙派内置 100Hz 局部样条插值。若新动作 Chunk 超过 300ms 未达，边缘端就地触发熔断，阻尼平滑回退至全开姿态 (`Relax-to-OPEN`)。
+- **不变量 22 (AI 数据转换环境容器隔离, 2026-10-14 追加)**: `rosbag2 -> LeRobotDataset` 的离线转换与云端训练运行在专属 Docker 容器中，避免本地 Ubuntu 26.04 (Python 3.14) 对 PyTorch/LeRobot 依赖生态的破坏。
 
 ## 5. 接力指令 (Handoff to Next Agent)
-- **状态**: **全流程已收敛归档 (Pipeline Archived & Idle)**
-- **当前负责人**: **None (等待用户下一步指令)**
-- **归档实证汇总**:
-  1. 5 包全量构建通过：`tuinadex_core`, `tuinadex_hand`, `tuinadex_teleop`, `tuinadex_recorder`, `tuinadex_sim`；
-  2. 测试矩阵全绿：47 passed + 6 skipped (leap_hand), 5 passed + 2 skipped (smolvla), 4 passed (ROS2 integration)；
-  3. 双模式 E2E 回环脚本自动化验证通过：`e2e_sim_check.sh` (131 帧 PASS), `e2e_mock_check.sh` (146 帧 PASS)；
-  4. 双模 launch 命令 (`use_sim:=true` / `use_sim:=false mock:=true`) 启动测试通过；
-  5. 架构决策文档 [`docs/adrs/0002-architecture-decisions-sim.md`](file:///home/bright/win_office/ubantu_files/project/TuinaDex_v2.0/docs/adrs/0002-architecture-decisions-sim.md) 与根目录 [`README.md`](file:///home/bright/win_office/ubantu_files/project/TuinaDex_v2.0/README.md) 同步完成；
-  6. 长程图谱沉淀完成。
+- **状态**: **多端异构环境管理架构设计规范已冻结 (SPEC-ENV-2026-10-14 落地)**
+- **当前负责人**: **Antigravity / 待转交 Claude Code 或根据用户指令实施环境脚手架脚本**
+- **当前产出物**:
+  1. 完整架构规范文档：[`docs/superpowers/specs/2026-10-14-environment-management-architecture-design.md`](docs/superpowers/specs/2026-10-14-environment-management-architecture-design.md)；
+  2. 规范入口索引：[`docs/specs/ENVIRONMENT_MANAGEMENT_SPEC.md`](docs/specs/ENVIRONMENT_MANAGEMENT_SPEC.md)；
+  3. 共享知识图谱已沉淀 4 个核心实体与关键环境约束；
+  4. 新增 Invariants 19~22 已写入黑板。
 - **硬件安全红线提示**:
-  物理舵机真机连接（`use_sim:=false mock:=false`）需在接驳真实物理供电与串口、且有急停预案的前提下由人工审核后执行。
+  物理舵机真机连接（`use_sim:=false mock:=false`）需在接驳真实物理供电与串口、且有急停预案的前提下由人工审核后执行。机械臂需确保在 70% 臂展内安全运动。
 
