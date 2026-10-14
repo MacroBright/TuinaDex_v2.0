@@ -37,7 +37,7 @@ TuinaDex v2.0 是一套面向中医推拿/理疗场景的具身智能机械臂-�
 
 ```
                                ┌─────────────────────────────────────────────────────┐
-                               │             [ENV-CLOUD] 云端 GPU 服务器             │
+                               │       [TD_v2.0-ENV-CLOUD] 云端 GPU 服务器           │
                                │  Docker (nvidia-docker, CUDA 12.4, PyTorch 2.4)     │
                                │  • VLA 推理服务 (gRPC / Zenoh Action Streaming)     │
                                │  • LeRobot 策略离线训练                             │
@@ -45,15 +45,15 @@ TuinaDex v2.0 是一套面向中医推拿/理疗场景的具身智能机械臂-�
                                                           │ gRPC / Action Chunks (10~15Hz)
                                                           ▼
 ┌───────────────────────────────────────┐      ┌─────────────────────────────────────┐
-│       [ENV-DEV] 本地开发机 (Legion)    │      │    [ENV-EDGE] 香橙派 AI Pro 20T     │
+│  [TD_v2.0-ENV-DEV] 本地开发机 (Legion)│      │ [TD_v2.0-ENV-EDGE] 香橙派 AI Pro 20T│
 │  Ubuntu 26.04 + ROS 2 Lyrical (原生)  │      │  Ubuntu 22.04 aarch64 + CANN 8.x    │
 │                                       │      │                                     │
-│  • ENV-DEV-HW (Conda arm_robot/leap)  │      │  • 昇腾 NPU 穴位识别 (pyACL, 30fps) │
+│  • TD_v2.0-ENV-DEV-HW (Conda)         │      │  • 昇腾 NPU 穴位识别 (pyACL, 30fps) │
 │    - 专家遥操示教采集 (Teleop)        │◄────►│  • 底层总线: SocketCAN + USB-TTL    │
 │    - 硬件低延迟直连联调               │ DDS  │  • 统一机器人控制中枢                │
-│  • ENV-DEV-SIM                        │ (42) │  • 本地安全看门狗 (100Hz)           │
+│  • TD_v2.0-ENV-DEV-SIM                │ (42) │  • 本地安全看门狗 (100Hz)           │
 │    - MuJoCo 物理仿真 / RViz 运动学    │      │  • VLA 动作平滑插值执行             │
-│  • ENV-DATA (Docker)                  │      │                                     │
+│  • TD_v2.0-ENV-DATA (Docker)          │      │                                     │
 │    - rosbag2 -> LeRobotDataset 转换   │      │                                     │
 └───────────────────────────────────────┘      └─────────────────────────────────────┘
 ```
@@ -62,11 +62,11 @@ TuinaDex v2.0 是一套面向中医推拿/理疗场景的具身智能机械臂-�
 
 | 环境代码 | 所在物理主机 | OS / 架构 | ROS 2 发行版 | Python / 工具链 | 核心依赖包 | 隔离管理方式 |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| **`ENV-DEV-HW`** | 本地 PC | Ubuntu 26.04<br>x86_64 | ROS 2 Lyrical<br>(/opt/ros/lyrical) | Python 3.10 (Conda)<br>+ Python 3.14 (系统) | `motorbridge`<br>`ros-lyrical-pinocchio`<br>`pyserial`<br>`sensor_msgs` | **Conda 虚拟环境** (`arm_robot`, `leap_hand`)，直通物理串口与 SocketCAN |
-| **`ENV-DEV-SIM`** | 本地 PC | Ubuntu 26.04<br>x86_64 | ROS 2 Lyrical | Python 3.14 / 3.12 | `mujoco 3.x`<br>`rviz2`<br>`moveit2` | **宿主机原生环境**，复用本地 RTX 3060 OpenGL 硬件加速 |
-| **`ENV-DATA`** | 本地 PC / 服务器 | Linux x86_64 | 可选 ROS 2 | Python 3.10<br>(Docker 锁死) | `lerobot`<br>`rosbags`<br>`ffmpeg 7.1` (libsvtav1) | **Docker 容器** (`tuinadex-data:v2.0`)，规避本地 Python 3.14 对旧版 PyTorch 的兼容冲突 |
-| **`ENV-CLOUD`** | 云端 GPU 节点 | Linux x86_64<br>(RTX 3090/A100) | 无需 ROS 2 | Python 3.10+<br>CUDA 12.4 | `lerobot`<br>`transformers`<br>`grpcio`<br>`zenoh-python` | **Docker 容器** (`tuinadex-vla:latest`)，挂载 GPU 提供远程动作生成服务 |
-| **`ENV-EDGE`** | 香橙派 AI Pro 20T | 官方 Ubuntu 22.04<br>aarch64 | ROS 2 Humble<br>(/opt/ros/humble) | Python 3.10 (系统)<br>CANN 8.x | `AscendCL (pyACL)`<br>`ros-humble-pinocchio`<br>`motorbridge`<br>`cyclonedds` | **宿主机原生专有环境**，直通 `/dev/davinci*`、`/dev/ttyUSB*`、`can0` |
+| **`TD_v2.0-ENV-DEV-HW`** | 本地 PC | Ubuntu 26.04<br>x86_64 | ROS 2 Lyrical<br>(/opt/ros/lyrical) | Python 3.10 (Conda)<br>+ Python 3.14 (系统) | `motorbridge`<br>`ros-lyrical-pinocchio`<br>`pyserial`<br>`sensor_msgs` | **Conda 虚拟环境** (`arm_robot`, `leap_hand`)，直通物理串口与 SocketCAN |
+| **`TD_v2.0-ENV-DEV-SIM`** | 本地 PC | Ubuntu 26.04<br>x86_64 | ROS 2 Lyrical | Python 3.14 / 3.12 | `mujoco 3.x`<br>`rviz2`<br>`moveit2` | **宿主机原生环境**，复用本地 RTX 3060 OpenGL 硬件加速 |
+| **`TD_v2.0-ENV-DATA`** | 本地 PC / 服务器 | Linux x86_64 | 可选 ROS 2 | Python 3.10<br>(Docker 锁死) | `lerobot`<br>`rosbags`<br>`ffmpeg 7.1` (libsvtav1) | **Docker 容器** (`tuinadex-data:v2.0`)，规避本地 Python 3.14 对旧版 PyTorch 的兼容冲突 |
+| **`TD_v2.0-ENV-CLOUD`** | 云端 GPU 节点 | Linux x86_64<br>(RTX 3090/A100) | 无需 ROS 2 | Python 3.10+<br>CUDA 12.4 | `lerobot`<br>`transformers`<br>`grpcio`<br>`zenoh-python` | **Docker 容器** (`tuinadex-vla:latest`)，挂载 GPU 提供远程动作生成服务 |
+| **`TD_v2.0-ENV-EDGE`** | 香橙派 AI Pro 20T | 官方 Ubuntu 22.04<br>aarch64 | ROS 2 Humble<br>(/opt/ros/humble) | Python 3.10 (系统)<br>CANN 8.x | `AscendCL (pyACL)`<br>`ros-humble-pinocchio`<br>`motorbridge`<br>`cyclonedds` | **宿主机原生专有环境**，直通 `/dev/davinci*`、`/dev/ttyUSB*`、`can0` |
 
 ---
 
@@ -128,8 +128,8 @@ TuinaDex_v2.0/
 ├── .agent/
 │   └── SESSION_STATE.md            # 多 Agent 协同与开发状态黑板
 ├── docker/
-│   ├── data.Dockerfile             # ENV-DATA: LeRobot 数据清洗与转换镜像
-│   └── vla_cloud.Dockerfile        # ENV-CLOUD: 云端 VLA 推理服务镜像
+│   ├── data.Dockerfile             # TD_v2.0-ENV-DATA: LeRobot 数据清洗与转换镜像
+│   └── vla_cloud.Dockerfile        # TD_v2.0-ENV-CLOUD: 云端 VLA 推理服务镜像
 ├── scripts/
 │   ├── env/
 │   │   ├── init_dev_pc.sh          # 本机 Ubuntu 26.04 环境一键检测与配置
@@ -158,7 +158,7 @@ TuinaDex_v2.0/
 
 每个环境在投入使用前，必须执行以下基准验证命令并全绿通过：
 
-### 6.1 本地 PC 开发机 (ENV-DEV-HW & SIM)
+### 6.1 本地 PC 开发机 (TD_v2.0-ENV-DEV-HW & SIM)
 ```bash
 # 1. 验证 Lyrical 基础功能包编译
 source /opt/ros/lyrical/setup.bash
@@ -171,7 +171,7 @@ colcon build --symlink-install --packages-select tuinadex_core tuinadex_hand tui
 python3 -m pytest tests/test_leap_hand_node_integration.py tests/test_sim_node_integration.py -v
 ```
 
-### 6.2 香橙派边缘端 (ENV-EDGE)
+### 6.2 香橙派边缘端 (TD_v2.0-ENV-EDGE)
 ```bash
 # 1. 检查昇腾 NPU 状态与驱动
 npu-smi info
@@ -183,7 +183,7 @@ ip -details link show can0
 ros2 topic pub /ping std_msgs/String "data: 'hello from orangepi'"
 ```
 
-### 6.3 云端推理容器 (ENV-CLOUD)
+### 6.3 云端推理容器 (TD_v2.0-ENV-CLOUD)
 ```bash
 # 1. 检查 CUDA 与 PyTorch 加速
 python3 -c "import torch; assert torch.cuda.is_available(); print('CUDA OK')"
