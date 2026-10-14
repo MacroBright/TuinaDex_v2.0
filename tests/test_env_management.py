@@ -134,5 +134,16 @@ def test_task5_vla_cloud_docker_and_script():
     assert res.returncode == 0, f"Syntax error in launch_vla_cloud.sh: {res.stderr}"
 
 
+def test_task6_verify_all_script():
+    """Verify Task 6 holistic verification script."""
+    verify_script = REPO_ROOT / "scripts" / "verify_all_envs.sh"
+
+    assert verify_script.exists(), "scripts/verify_all_envs.sh does not exist"
+    assert os.access(verify_script, os.X_OK), "scripts/verify_all_envs.sh is not executable"
+    res = subprocess.run(["bash", "-n", str(verify_script)], capture_output=True, text=True)
+    assert res.returncode == 0, f"Syntax error in verify_all_envs.sh: {res.stderr}"
+
+
+
 
 
