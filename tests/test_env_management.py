@@ -82,3 +82,21 @@ def test_task2_dev_pc_rules_and_init():
     res = subprocess.run(["bash", "-n", str(init_script)], capture_output=True, text=True)
     assert res.returncode == 0, f"Syntax error in init_dev_pc.sh: {res.stderr}"
 
+
+def test_task3_orangepi_service_and_init():
+    """Verify Task 3 systemd CAN service and Orange Pi init script."""
+    service_file = REPO_ROOT / "scripts" / "env" / "tuinadex-can.service"
+    init_script = REPO_ROOT / "scripts" / "env" / "init_orangepi.sh"
+
+    assert service_file.exists(), "scripts/env/tuinadex-can.service does not exist"
+    service_content = service_file.read_text()
+    assert "[Unit]" in service_content, "Missing [Unit] section in systemd service"
+    assert "[Service]" in service_content, "Missing [Service] section in systemd service"
+    assert "bitrate 1000000" in service_content, "Missing 1Mbps bitrate configuration"
+
+    assert init_script.exists(), "scripts/env/init_orangepi.sh does not exist"
+    assert os.access(init_script, os.X_OK), "scripts/env/init_orangepi.sh is not executable"
+    res = subprocess.run(["bash", "-n", str(init_script)], capture_output=True, text=True)
+    assert res.returncode == 0, f"Syntax error in init_orangepi.sh: {res.stderr}"
+
+
