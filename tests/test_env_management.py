@@ -100,3 +100,21 @@ def test_task3_orangepi_service_and_init():
     assert res.returncode == 0, f"Syntax error in init_orangepi.sh: {res.stderr}"
 
 
+def test_task4_data_docker_and_script():
+    """Verify Task 4 data cleaning Dockerfile and wrapper script."""
+    dockerfile = REPO_ROOT / "docker" / "data.Dockerfile"
+    script = REPO_ROOT / "scripts" / "run_data_convert.sh"
+
+    assert dockerfile.exists(), "docker/data.Dockerfile does not exist"
+    df_content = dockerfile.read_text()
+    assert "FROM " in df_content, "Missing FROM line in data.Dockerfile"
+    assert "lerobot" in df_content.lower(), "Missing lerobot dependency in data.Dockerfile"
+    assert "WORKDIR" in df_content, "Missing WORKDIR in data.Dockerfile"
+
+    assert script.exists(), "scripts/run_data_convert.sh does not exist"
+    assert os.access(script, os.X_OK), "scripts/run_data_convert.sh is not executable"
+    res = subprocess.run(["bash", "-n", str(script)], capture_output=True, text=True)
+    assert res.returncode == 0, f"Syntax error in run_data_convert.sh: {res.stderr}"
+
+
+
