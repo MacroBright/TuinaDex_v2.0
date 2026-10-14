@@ -1,0 +1,25 @@
+# ==============================================================================
+# TuinaDex v2.0 - Udev Device Rules
+# Provides non-root access and canonical symlinks for TuinaDex hardware
+# 1. LEAP Hand 16-DOF USB-TTL Serial Bridge -> /dev/tuinadex_hand
+# 2. reBot-DevArm RS USB2CAN Adapter (gs_usb, candleLight, slcan)
+# ==============================================================================
+
+# 1. FTDI FT232R / FT232H (Standard Dynamixel U2D2 / USB-TTL converter)
+SUBSYSTEM=="tty", ATTRS{idVendor}=="0403", ATTRS{idProduct}=="6001", MODE="0666", GROUP="dialout", SYMLINK+="tuinadex_hand"
+SUBSYSTEM=="tty", ATTRS{idVendor}=="0403", ATTRS{idProduct}=="6014", MODE="0666", GROUP="dialout", SYMLINK+="tuinadex_hand"
+
+# 2. Silicon Labs CP210x (Alternative LEAP Hand USB-TTL converter)
+SUBSYSTEM=="tty", ATTRS{idVendor}=="10c4", ATTRS{idProduct}=="ea60", MODE="0666", GROUP="dialout", SYMLINK+="tuinadex_hand"
+
+# 3. WCH CH340 / CH341 (Alternative USB-TTL converter)
+SUBSYSTEM=="tty", ATTRS{idVendor}=="1a86", ATTRS{idProduct}=="7523", MODE="0666", GROUP="dialout", SYMLINK+="tuinadex_hand"
+
+# 4. Fallback: Grant read/write permission to all USB serial ports
+KERNEL=="ttyUSB*", MODE="0666", GROUP="dialout"
+KERNEL=="ttyACM*", MODE="0666", GROUP="dialout"
+
+# 5. USB-to-CAN Adapters (candleLight / InnoMaker / Openlight)
+SUBSYSTEM=="net", ACTION=="add", ATTRS{idVendor}=="1d50", ATTRS{idProduct}=="606f", NAME="can0"
+SUBSYSTEM=="usb", ATTRS{idVendor}=="1d50", ATTRS{idProduct}=="606f", MODE="0666", GROUP="dialout"
+SUBSYSTEM=="usb", ATTRS{idVendor}=="16d0", ATTRS{idProduct}=="0f78", MODE="0666", GROUP="dialout"

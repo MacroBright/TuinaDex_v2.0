@@ -65,3 +65,20 @@ def test_cyclonedds_xml_validity(tmp_path):
     if domain_id is not None:
         val = domain_id if isinstance(domain_id, str) else domain_id.text
         assert val == "42" or val == "any"
+
+
+def test_task2_dev_pc_rules_and_init():
+    """Verify Task 2 udev rules and dev PC init script."""
+    rules_file = REPO_ROOT / "scripts" / "env" / "99-tuinadex-devices.rules"
+    init_script = REPO_ROOT / "scripts" / "env" / "init_dev_pc.sh"
+
+    assert rules_file.exists(), "scripts/env/99-tuinadex-devices.rules does not exist"
+    rules_content = rules_file.read_text()
+    assert "tuinadex_hand" in rules_content, "Missing tuinadex_hand symlink rule"
+    assert "0666" in rules_content, "Missing 0666 permissions in udev rules"
+
+    assert init_script.exists(), "scripts/env/init_dev_pc.sh does not exist"
+    assert os.access(init_script, os.X_OK), "scripts/env/init_dev_pc.sh is not executable"
+    res = subprocess.run(["bash", "-n", str(init_script)], capture_output=True, text=True)
+    assert res.returncode == 0, f"Syntax error in init_dev_pc.sh: {res.stderr}"
+
