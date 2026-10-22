@@ -79,3 +79,24 @@ TuinaDex 是面向中医推拿/按摩场景构建的具身智能机器人系统�
   `source /opt/ros/lyrical/setup.bash && python3 -m pytest tests/test_sim_node_integration.py -v`
 - MuJoCo 统一入口 E2E：
   `bash scripts/e2e_sim_check.sh`
+
+---
+
+## 6. 环境管理与依赖变更门禁 (Environment & Dependency Change Gate)
+任何涉及项目运行环境、Conda 环境、Docker 容器、系统依赖、pip 包或通信协议配置的改动，**必须严格遵循《多端异构环境管理架构设计规范》(`docs/specs/ENVIRONMENT_MANAGEMENT_SPEC.md`)，并执行以下准入检查后方可放行**：
+
+1. **环境归属唯一性校验 (Environment Alignment)**:
+   - 严禁随意创建未在规范中备案的零散 Conda 环境或在宿主机随意 `pip install`；
+   - 6-DOF 机械臂/16-DOF 灵巧手控制、MuJoCo 动力学仿真、手势/视觉遥操严格归入 `tuinadex-control` (Python 3.10.20)；
+   - 具身策略学习、LeRobot 轨迹转换、SmolVLA/ACT 训练评估严格归入 `tuinadex-vla` (Python 3.10.20 + CUDA 12.8)；
+   - 跨版本/异构计算任务使用容器化隔离 (`TD_v2.0-ENV-DATA`, `TD_v2.0-ENV-CLOUD`)。
+2. **零污染与终端局部作用域准则 (Anti-Pollution & Terminal Scope)**:
+   - 禁止在宿主机 `~/.bashrc` 中直接写入特定 Conda 环境的自动激活；
+   - 统一使用 `source scripts/activate_tuinadex.sh [control|vla]` 仅在当前终端按需切换，杜绝与外部项目（如 hamer 等）产生依赖污染。
+3. **可复现性规格同步 (Specification Reproducibility)**:
+   - 一旦向 `tuinadex-control` 或 `tuinadex-vla` 添加、升级或移除依赖包，**必须同步更新并导出锁定文件** (`scripts/env/tuinadex-control.yml` / `scripts/env/tuinadex-vla.yml`)。
+4. **强行放行前置门禁 (Pre-Commit / Pre-Release Gate)**:
+   - 任何涉及环境、依赖、脚本改动的代码提交前，必须运行全套自动化环境验证：
+     `bash scripts/verify_all_envs.sh`
+   - 只有当环境自动化测试（`test_env_management.py`）全绿且系统诊断全部为 `[PASS]` 时，才允许放行与合入主分支。
+

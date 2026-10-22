@@ -32,6 +32,9 @@
 | 2026-09-21 | Codex | Phase 3 Task 1~4: 新建 `tuinadex_core` 单源化共享逻辑；实现 `SimulationCore` hold+ramp 回退与 500Hz 子步；实现 `LeapHandSimNode` 50Hz 单线程循环；增加 `use_sim` 统一入口和 `e2e_sim_check.sh`；将 MuJoCo 积分器固化为 `implicitfast` 修复模型失稳 | `pytest tests/` 45 passed + 6 skipped；ROS 集成 4 passed；5 包 `colcon build` 通过；`bash scripts/e2e_sim_check.sh` PASS（131 帧，median 19.98ms，收敛并回 OPEN） | `64d6cd7`, `ee30a7e`, `e7a9beb`, `bb8bcf0` |
 | 2026-09-21 | Claude Code | **Phase 3 双轴交叉审查 + 修复合入**: 并行双 sub-agent 审查（Standards 轴: 0 硬违规 + 3 判断题 smell + 1 文档缺口；Spec 轴: 0 行为错误，8 项重点核验全过）。经用户拍板"修复后合入"，完成 3 处轻微修复（tick 单次取状态 / `physics_timestep` 接入 bridge + 2 条新测试 / AGENTS.md build 行补新包），`phase3-sim-execution` 已合入 master | 修复分支 `72e3473`；合并 `1a5eab8`；合并后 `pytest tests/` **47 passed + 6 skipped** | `72e3473`, `1a5eab8` |
 | 2026-09-21 | Antigravity | **Phase 4: 全局复核与文档闭环**: 5 包全量 colcon build 回归通过；多环境单元与集成测试矩阵全绿（47 passed / 5 passed / 4 passed）；双模式端到端自动化脚本闭环验证（131 帧 sim / 146 帧 mock 全 PASS）；双模 launch 成功拉起验证；沉淀 ADR 0002、README.md、长程图谱实体与关系；全流水线闭环归档 | 5 包 colcon build 3.98s 通过；pytest tests/ 全绿；bash scripts/e2e_sim_check.sh PASS；bash scripts/e2e_mock_check.sh PASS；ros2 launch 双模式验证通过 | `bcb3a64` |
+| 2026-10-14 | Antigravity | **多端异构环境管理架构落地**: 制定 `ENVIRONMENT_MANAGEMENT_SPEC`；交付 Udev 硬件规则、CycloneDDS 跨端基线 (ROS_DOMAIN_ID=42)、香橙派 CAN systemd 服务、数据清洗与云端 VLA Dockerfile 及 `verify_all_envs.sh` 全景自检工具；全流程自动化单测通过 | `pytest tests/test_env_management.py` 8 passed; `bash scripts/verify_all_envs.sh` 全检通过 | `a9db14b`, `5859520` |
+| 2026-10-22 | Antigravity | **宿主机双基座环境收敛与准入门禁**: 废弃碎片环境，全面对齐 `tuinadex-control` 与 `tuinadex-vla` 双基座；交付一键激活脚本与导出锁定文件；建立环境依赖变更放行门禁 (Invariant 24) | `pytest tests/test_env_management.py` 9 passed; `bash scripts/verify_all_envs.sh` 全检通过; 双模 E2E PASS | `9ef320f` |
+
 
 ## 4. 核心技术决策与不变量 (Decisions & Invariants)
 - **不变量 1 (坐标与单位)**: ROS2 与 LeRobot 全链路强制 SI 单位弧度 (rad)。以实测校准后的 `OPEN_POSE`（全开平伸）为 0 rad 基准零位，手指屈伸弯曲为正 ($q > 0$)。
@@ -57,6 +60,8 @@
 - **不变量 20 (三端异构职责自治, 2026-10-14 追加)**: 架构严格分为三端：云端 GPU (VLA 推理推流 + 策略训练)；香橙派 AI Pro 20T (30fps NPU 穴位感知 + SocketCAN 臂/USB 手控制中枢 + 300ms 本地看门狗)；本地 PC (专家示教采集 + MuJoCo 仿真 + 自动化测试)。
 - **不变量 21 (Action Chunking 动作推流与超时熔断, 2026-10-14 追加)**: 云端至香橙派采用 gRPC/Zenoh Action Chunking 协议，香橙派内置 100Hz 局部样条插值。若新动作 Chunk 超过 300ms 未达，边缘端就地触发熔断，阻尼平滑回退至全开姿态 (`Relax-to-OPEN`)。
 - **不变量 22 (AI 数据转换环境容器隔离, 2026-10-14 追加)**: `rosbag2 -> LeRobotDataset` 的离线转换与云端训练运行在专属 Docker 容器中，避免本地 Ubuntu 26.04 (Python 3.14) 对 PyTorch/LeRobot 依赖生态的破坏。
+- **不变量 24 (环境依赖准入与变更门禁规则, 2026-10-22 追加)**: 任何涉及项目运行环境、Conda 环境、Docker 容器、系统依赖、pip 包或通信协议配置的改动，必须严格遵循《多端异构环境管理架构设计规范》(`docs/specs/ENVIRONMENT_MANAGEMENT_SPEC.md`)。改动前须核验环境归属唯一性与防污染原则，改动后必须运行 `bash scripts/verify_all_envs.sh` 全检通过并同步更新导出的 Conda 锁定文件（`scripts/env/*.yml`），方可放行与合并。
+
 
 ## 5. 接力指令 (Handoff to Next Agent)
 - **状态**: **多端异构环境管理架构设计规范已冻结 (SPEC-ENV-2026-10-14 落地)**

@@ -173,6 +173,24 @@ def test_task7_consolidated_conda_environments_and_activation():
     assert "python=3.10" in vla_text
 
 
+def test_task8_environment_change_gate_rules():
+    """Verify that the Environment Change Gate is codified in AGENTS.md and SESSION_STATE.md."""
+    agents_file = REPO_ROOT / "AGENTS.md"
+    session_file = REPO_ROOT / ".agent" / "SESSION_STATE.md"
+
+    assert agents_file.exists(), "AGENTS.md does not exist"
+    agents_content = agents_file.read_text()
+    assert "环境管理与依赖变更门禁" in agents_content
+    assert "verify_all_envs.sh" in agents_content
+    assert "ENVIRONMENT_MANAGEMENT_SPEC.md" in agents_content
+
+    assert session_file.exists(), ".agent/SESSION_STATE.md does not exist"
+    session_content = session_file.read_text()
+    assert "不变量 24" in session_content
+    assert "verify_all_envs.sh" in session_content
+
+
+
 
 
 
