@@ -23,7 +23,7 @@ echo -e "${BOLD}${BLUE}======================================================${N
 
 # 1. Run Automated Environment Tests
 echo -e "\n${BOLD}[Step 1/2] Running automated environment test suite...${NC}"
-PY_BIN="${HOME}/win_office/conda/envs/leap_hand/bin/python"
+PY_BIN="${HOME}/win_office/conda/envs/tuinadex-control/bin/python"
 if [ ! -f "${PY_BIN}" ]; then
     PY_BIN="python3"
 fi

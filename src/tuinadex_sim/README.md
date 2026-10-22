@@ -218,8 +218,9 @@ colcon build --symlink-install --packages-select tuinadex_sim
 source install/setup.bash
 
 # 2. 运行单元测试验证动力学与时钟未被破坏
-~/win_office/conda/envs/leap_hand/bin/python -m pytest tests/test_sim_bridge.py tests/test_sim_core.py -v
+~/win_office/conda/envs/tuinadex-control/bin/python -m pytest tests/test_sim_bridge.py tests/test_sim_core.py -v
 
 # 3. 启动带 3D 渲染的仿真节点验证实际效果
 ros2 launch tuinadex_hand hand.launch.py use_sim:=true gui:=true
 ```
+

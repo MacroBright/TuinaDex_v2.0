@@ -65,12 +65,12 @@ TuinaDex 是面向中医推拿/按摩场景构建的具身智能机器人系统�
 - 无物理硬件连接时，提供完整的虚拟仿真/Mock 回环测试或离线转换自检。
 
 ### 验证命令 (固化)
-- 宿主机纯逻辑与遥操/驱动单测：
-  `~/win_office/conda/envs/leap_hand/bin/python -m pytest tests/ -v`
+- 宿主机控制、仿真与遥操单测 (tuinadex-control)：
+  `~/win_office/conda/envs/tuinadex-control/bin/python -m pytest tests/ -v`
 - ROS2 集成测试（宿主机 Lyrical Desktop）：
   `source /opt/ros/lyrical/setup.bash && python3 -m pytest tests/test_leap_hand_node_integration.py tests/test_recorder_node.py -v`
-- LeRobot 适配器测试：
-  `~/win_office/conda/envs/smolvla/bin/python -m pytest tests/test_dataset_adapter.py -v`
+- LeRobot 适配器与学习测试 (tuinadex-vla)：
+  `~/win_office/conda/envs/tuinadex-vla/bin/python -m pytest tests/test_dataset_adapter.py -v`
 - 构建：
   `source /opt/ros/lyrical/setup.bash && colcon build --symlink-install --packages-select tuinadex_core tuinadex_hand tuinadex_teleop tuinadex_recorder tuinadex_sim`
 - 无真机端到端闭环：

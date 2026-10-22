@@ -97,7 +97,7 @@ fi
 # 5. Conda / Python Environments
 echo -e "\n${BOLD}[5] Conda / Virtual Environments:${NC}"
 CONDA_DIR="${HOME}/win_office/conda/envs"
-for env_name in "leap_hand" "arm_robot" "smolvla"; do
+for env_name in "tuinadex-control" "tuinadex-vla"; do
     if [ -d "${CONDA_DIR}/${env_name}" ]; then
         PY_VER=$("${CONDA_DIR}/${env_name}/bin/python" --version 2>&1 || echo "error")
         echo -e "  - Conda ${env_name}: ${GREEN}Found (${PY_VER})${NC}"

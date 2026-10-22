@@ -7,8 +7,8 @@ source /opt/ros/lyrical/setup.bash
 source install/setup.bash
 export ROS_DOMAIN_ID="${ROS_DOMAIN_ID:-77}"
 
-LEAP_HAND_PYTHON="${LEAP_HAND_PYTHON:-/home/bright/win_office/conda/envs/leap_hand/bin/python}"
-SMOLVLA_PYTHON="${SMOLVLA_PYTHON:-/home/bright/win_office/conda/envs/smolvla/bin/python}"
+CONTROL_PYTHON="${CONTROL_PYTHON:-/home/bright/win_office/conda/envs/tuinadex-control/bin/python}"
+VLA_PYTHON="${VLA_PYTHON:-/home/bright/win_office/conda/envs/tuinadex-vla/bin/python}"
 WORK="$(mktemp -d /tmp/tuinadex_e2e_XXXXXX)"
 KEEP_WORK="${E2E_KEEP_WORK:-0}"
 
@@ -65,7 +65,7 @@ np.savez(output, grid=grid, states=states, actions=actions)
 print(f"ROS-side conversion: {len(grid)} frames -> {output}")
 PY
 
-"$SMOLVLA_PYTHON" - "$WORK/episode.npz" "$WORK/dataset" <<'PY'
+"$VLA_PYTHON" - "$WORK/episode.npz" "$WORK/dataset" <<'PY'
 import sys
 from pathlib import Path
 

@@ -43,7 +43,8 @@
 - **不变量 7 (节点生命周期)**: 普通 rclpy Node + 显式 `WatchdogStateMachine` 纯类 FSM（FOLLOWING/RELAXING），不使用 LifecycleNode；安全逻辑必须抽成不依赖 rclpy 的纯模块。
 - **不变量 8 (采集器实现)**: `tuinadex_recorder` 采用 rosbag2_py 进程内节点 + `std_srvs/Trigger` 起停服务，严禁 subprocess 包装 `ros2 bag record`。
 - **不变量 9 (bag 反序列化)**: 依赖 ROS2 环境（本机安装 ROS2，Ubuntu 26.04 对应发行版），不写纯 Python CDR 解析器。
-- **不变量 10 (测试环境矩阵)**: 本地单元测试 = `leap_hand` conda env (`~/win_office/conda/envs/leap_hand/bin/python -m pytest tests/ -v`)；LeRobot 适配器测试 = `smolvla` env (lerobot 0.4.4)；ROS2 依赖测试用 `pytest.importorskip("rclpy")` 守护。
+- **不变量 10 (测试环境矩阵, 2026-10-22 更新)**: 本机环境彻底收敛为双规范环境：日常控制基座 = `tuinadex-control` (`~/win_office/conda/envs/tuinadex-control/bin/python -m pytest tests/ -v`，涵盖臂手驱动、MuJoCo 物理动力学仿真与 Co_Teleop 视觉遥操)；具身学习与模型训练 = `tuinadex-vla` (`~/win_office/conda/envs/tuinadex-vla/bin/python -m pytest tests/test_dataset_adapter.py -v`，涵盖 LeRobot 数据集转换与 SmolVLA/ACT 训练)；ROS2 依赖测试用 `pytest.importorskip("rclpy")` 守护。
+- **不变量 23 (本机统一双基座环境收敛, 2026-10-22 追加)**: 废弃原先散落的 `arm_robot`、`leap_hand`、`smolvla` 临时环境，本机环境严格收敛为 `tuinadex-control` (Python 3.10.20，负责 90% 驱动控制仿真遥操) 与 `tuinadex-vla` (Python 3.10.20 + CUDA 12.8，负责数据录制与模型训练)，彻底避免跨项目污染。
 - **不变量 11 (ROS2 运行环境)**: ROS2 发行版为 Lyrical Luth Desktop，默认使用宿主机 `/opt/ros/lyrical/setup.bash`。
 - **不变量 12 (电机路径限位门)**: `/hand/joint_command` 必须先通过 `align_command()` 校验，并用 `JOINT_SPEC_LIMITS` 夹取到 Spec §1 逐关节限位；拒绝维度/非有限值/未知关节名，禁止越界绝对弧度进入驱动。
 - **不变量 13 (仿真话题完全等价性, Phase 1 追加)**: 仿真主控 `leap_hand_sim_node` 对外必须严格使用 `/hand/joint_states` 与 `/hand/joint_command`，消息格式均为 `sensor_msgs/JointState`，16 维 Canonical Joint 命名与限位完全对齐，上层遥操、采集与学习算法零感知切换。

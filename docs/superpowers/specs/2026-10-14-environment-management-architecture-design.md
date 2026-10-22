@@ -62,7 +62,7 @@ TuinaDex v2.0 是一套面向中医推拿/理疗场景的具身智能机械臂-�
 
 | 环境代码 | 所在物理主机 | OS / 架构 | ROS 2 发行版 | Python / 工具链 | 核心依赖包 | 隔离管理方式 |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| **`TD_v2.0-ENV-DEV-HW`** | 本地 PC | Ubuntu 26.04<br>x86_64 | ROS 2 Lyrical<br>(/opt/ros/lyrical) | Python 3.10 (Conda)<br>+ Python 3.14 (系统) | `motorbridge`<br>`ros-lyrical-pinocchio`<br>`pyserial`<br>`sensor_msgs` | **Conda 虚拟环境** (`arm_robot`, `leap_hand`)，直通物理串口与 SocketCAN |
+| **`TD_v2.0-ENV-DEV-HW`** | 本地 PC | Ubuntu 26.04<br>x86_64 | ROS 2 Lyrical<br>(/opt/ros/lyrical) | Python 3.10 (Conda)<br>+ Python 3.14 (系统) | `python-can`<br>`dynamixel-sdk`<br>`mediapipe`<br>`pinocchio` | **Conda 虚拟环境** (`tuinadex-control`)，直通物理串口与 SocketCAN |
 | **`TD_v2.0-ENV-DEV-SIM`** | 本地 PC | Ubuntu 26.04<br>x86_64 | ROS 2 Lyrical | Python 3.14 / 3.12 | `mujoco 3.x`<br>`rviz2`<br>`moveit2` | **宿主机原生环境**，复用本地 RTX 3060 OpenGL 硬件加速 |
 | **`TD_v2.0-ENV-DATA`** | 本地 PC / 服务器 | Linux x86_64 | 可选 ROS 2 | Python 3.10<br>(Docker 锁死) | `lerobot`<br>`rosbags`<br>`ffmpeg 7.1` (libsvtav1) | **Docker 容器** (`tuinadex-data:v2.0`)，规避本地 Python 3.14 对旧版 PyTorch 的兼容冲突 |
 | **`TD_v2.0-ENV-CLOUD`** | 云端 GPU 节点 | Linux x86_64<br>(RTX 3090/A100) | 无需 ROS 2 | Python 3.10+<br>CUDA 12.4 | `lerobot`<br>`transformers`<br>`grpcio`<br>`zenoh-python` | **Docker 容器** (`tuinadex-vla:latest`)，挂载 GPU 提供远程动作生成服务 |
@@ -165,7 +165,7 @@ source /opt/ros/lyrical/setup.bash
 colcon build --symlink-install --packages-select tuinadex_core tuinadex_hand tuinadex_sim
 
 # 2. 纯逻辑与硬件 Mock 单元测试
-~/win_office/conda/envs/leap_hand/bin/python -m pytest tests/ -v
+~/win_office/conda/envs/tuinadex-control/bin/python -m pytest tests/ -v
 
 # 3. MuJoCo 仿真与 ROS2 节点集成回归
 python3 -m pytest tests/test_leap_hand_node_integration.py tests/test_sim_node_integration.py -v

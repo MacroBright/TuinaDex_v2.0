@@ -144,6 +144,36 @@ def test_task6_verify_all_script():
     assert res.returncode == 0, f"Syntax error in verify_all_envs.sh: {res.stderr}"
 
 
+def test_task7_consolidated_conda_environments_and_activation():
+    """Verify Task 7 consolidated conda environment specs and activation script."""
+    activator = REPO_ROOT / "scripts" / "activate_tuinadex.sh"
+    control_yaml = REPO_ROOT / "scripts" / "env" / "tuinadex-control.yml"
+    vla_yaml = REPO_ROOT / "scripts" / "env" / "tuinadex-vla.yml"
+
+    # 1. Activator existence, permissions, and bash syntax
+    assert activator.exists(), "scripts/activate_tuinadex.sh does not exist"
+    assert os.access(activator, os.X_OK), "scripts/activate_tuinadex.sh is not executable"
+    res = subprocess.run(["bash", "-n", str(activator)], capture_output=True, text=True)
+    assert res.returncode == 0, f"Syntax error in activate_tuinadex.sh: {res.stderr}"
+
+    activator_content = activator.read_text()
+    assert "tuinadex-control" in activator_content
+    assert "tuinadex-vla" in activator_content
+    assert "setup_cyclonedds.sh" in activator_content
+
+    # 2. YAML environment specs
+    assert control_yaml.exists(), "scripts/env/tuinadex-control.yml does not exist"
+    control_text = control_yaml.read_text()
+    assert "name: tuinadex-control" in control_text
+    assert "python=3.10" in control_text
+
+    assert vla_yaml.exists(), "scripts/env/tuinadex-vla.yml does not exist"
+    vla_text = vla_yaml.read_text()
+    assert "name: tuinadex-vla" in vla_text
+    assert "python=3.10" in vla_text
+
+
+
 
 
 

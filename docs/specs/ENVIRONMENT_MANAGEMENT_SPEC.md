@@ -10,7 +10,7 @@
 1. **环境与节点分工**：
    - **云端 GPU**：`TD_v2.0-ENV-CLOUD` (Docker + CUDA 12.x + PyTorch)，运行 VLA 大模型 Action Chunking 推流服务与 LeRobot 策略离线训练。
    - **香橙派 AI Pro 20T**：`TD_v2.0-ENV-EDGE` (Ubuntu 22.04 aarch64 + CANN 8.x + ROS 2 Humble)，运行 30fps NPU 穴位识别、SocketCAN + USB-TTL 底层控制中枢与 300ms 安全看门狗。
-   - **本机 PC (Legion Y9000P)**：`TD_v2.0-ENV-DEV-HW` (Ubuntu 26.04 + ROS 2 Lyrical + Conda `arm_robot`/`leap_hand`)，专职遥操作专家示教采集、MuJoCo 仿真与单元测试；`TD_v2.0-ENV-DATA` (Docker) 进行无污染数据集转换。
+   - **本机 PC (Legion Y9000P)**：`TD_v2.0-ENV-DEV-HW` (Ubuntu 26.04 + ROS 2 Lyrical + Conda `tuinadex-control` / `tuinadex-vla`)，专职遥操作专家示教采集、MuJoCo 仿真与单元测试；`TD_v2.0-ENV-DATA` (Docker 或 `tuinadex-vla`) 进行无污染数据集转换。
 2. **跨端通信核心基线**：
    - 全网统一使用 **Eclipse CycloneDDS**（`RMW_IMPLEMENTATION=rmw_cyclonedds_cpp`）；
    - 统一域 `ROS_DOMAIN_ID=42`；

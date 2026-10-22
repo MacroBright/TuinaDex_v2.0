@@ -99,8 +99,8 @@ flowchart TD
 | 环境 | 路径 / 工具 | 适用模块 | 验证方式 |
 | :--- | :--- | :--- | :--- |
 | **ROS2 主机环境** | `/opt/ros/lyrical/setup.bash` + `/usr/bin/python3` (MuJoCo 3.13) | `tuinadex_core`, `tuinadex_hand`, `tuinadex_sim`, `tuinadex_recorder` 编译与 ROS2 集成测试 | `colcon build`, `pytest tests/test_leap_hand_node_integration.py tests/test_sim_node_integration.py` |
-| **LEAP Hand 纯逻辑环境** | `~/win_office/conda/envs/leap_hand/bin/python` (Python 3.14 + MediaPipe) | 驱动换算、FSM 状态机、限位校验、手势映射、MuJoCo 动力学核心单测 | `python -m pytest tests/ -v` (47 passed) |
-| **LeRobot 训练适配环境** | `~/win_office/conda/envs/smolvla/bin/python` (Python 3.10 + LeRobot 0.4.4) | `tuinadex_dataset` 离线保存与 Parquet 导出 | `python -m pytest tests/test_dataset_adapter.py -v` |
+| **日常控制基座环境 (tuinadex-control)** | `~/win_office/conda/envs/tuinadex-control/bin/python` (Python 3.10.20) | 6-DOF 臂、16-DOF 手驱动、MuJoCo 动力学、Co_Teleop 视觉遥操 (MediaPipe/OpenCV/RealSense) | `python -m pytest tests/ -v` |
+| **具身学习与训练环境 (tuinadex-vla)** | `~/win_office/conda/envs/tuinadex-vla/bin/python` (Python 3.10.20 + CUDA 12.8) | `tuinadex_dataset` 离线保存与 Parquet 导出、SmolVLA/ACT 训练 | `python -m pytest tests/test_dataset_adapter.py -v` |
 
 ---
 
@@ -154,11 +154,11 @@ ros2 launch tuinadex_teleop teleop.launch.py
 
 ### 4.4 运行多矩阵单元测试
 ```bash
-# 1. 基础逻辑、遥操映射与仿真桥接测试 (leap_hand 环境)
-~/win_office/conda/envs/leap_hand/bin/python -m pytest tests/ -v
+# 1. 基础逻辑、遥操映射与仿真桥接测试 (tuinadex-control 环境)
+~/win_office/conda/envs/tuinadex-control/bin/python -m pytest tests/ -v
 
-# 2. LeRobot 数据集适配器测试 (smolvla 环境)
-~/win_office/conda/envs/smolvla/bin/python -m pytest tests/test_dataset_sync_validator.py tests/test_dataset_adapter.py -v
+# 2. LeRobot 数据集适配器与学习模型测试 (tuinadex-vla 环境)
+~/win_office/conda/envs/tuinadex-vla/bin/python -m pytest tests/test_dataset_sync_validator.py tests/test_dataset_adapter.py -v
 
 # 3. ROS2 节点级集成与双模测试 (ROS2 主机环境)
 source /opt/ros/lyrical/setup.bash

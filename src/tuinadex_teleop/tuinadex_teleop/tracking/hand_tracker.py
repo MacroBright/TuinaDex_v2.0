@@ -22,7 +22,7 @@ except ImportError:
     import sys
 
     _candidate = os.path.expanduser(
-        "~/win_office/conda/envs/leap_hand/lib/python3.14/site-packages"
+        "~/win_office/conda/envs/tuinadex-control/lib/python3.10/site-packages"
     )
     if os.path.isdir(_candidate) and _candidate not in sys.path:
         sys.path.append(_candidate)
