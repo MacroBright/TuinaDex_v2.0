@@ -1,6 +1,6 @@
 # Multi-Modal Data Collection Framework with LeRobotDataset v3.0 Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** Build a layered, multi-modal robot data collection framework in `tuinadex_teleop` supporting seamless switching between MuJoCo simulation and real robot via ROS 2 topic interfaces, dynamic 16D/22D action-state adaptation, and automated multi-camera LeRobotDataset v3.0 export.
 
@@ -47,7 +47,7 @@ A 4-tier decoupled pipeline:
   - `BaseTuinaEnv(ABC)`: `reset() -> dict`, `step(action: np.ndarray) -> tuple[dict, dict]`, `get_observation() -> dict`, `close() -> None`
   - Observation format: `{"state": np.ndarray (float32), "images": dict[str, np.ndarray], "timestamp": float}`
 
-- [ ] **Step 1: Write failing test for RobotConfig and BaseTuinaEnv**
+- [x] **Step 1: Write failing test for RobotConfig and BaseTuinaEnv**
 
 ```python
 # tests/test_robot_env_spec.py
@@ -91,12 +91,12 @@ def test_base_tuina_env_contract():
     assert obs2["state"].shape == (16,)
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `~/win_office/conda/envs/tuinadex-control/bin/python -m pytest tests/test_robot_env_spec.py -v`
 Expected: FAIL with `ModuleNotFoundError: No module named 'tuinadex_teleop.envs'`
 
-- [ ] **Step 3: Implement RobotConfig, BaseTuinaEnv, and update setup.py**
+- [x] **Step 3: Implement RobotConfig, BaseTuinaEnv, and update setup.py**
 
 Create `src/tuinadex_teleop/tuinadex_teleop/envs/config.py`:
 - `mode`: `"hand_only"` | `"arm_hand"`
@@ -108,12 +108,12 @@ Create `src/tuinadex_teleop/tuinadex_teleop/envs/base_env.py`:
 
 Update `src/tuinadex_teleop/setup.py` packages list to include `tuinadex_teleop.envs`.
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `~/win_office/conda/envs/tuinadex-control/bin/python -m pytest tests/test_robot_env_spec.py -v`
 Expected: PASS (2 passed)
 
-- [ ] **Step 5: Commit changes**
+- [x] **Step 5: Commit changes**
 
 ```bash
 git add src/tuinadex_teleop/ tests/test_robot_env_spec.py
@@ -136,7 +136,7 @@ git commit -m "feat(teleop): implement RobotConfig and BaseTuinaEnv abstraction"
 - Produces:
   - `ROS2RobotEnv(BaseTuinaEnv)`: manages ROS 2 pub/sub, thread-safe observation synchronization with `cv_bridge` or direct buffer unpacking, and gated action dispatching.
 
-- [ ] **Step 1: Write failing test for ROS2RobotEnv with mock ROS node callbacks**
+- [x] **Step 1: Write failing test for ROS2RobotEnv with mock ROS node callbacks**
 
 ```python
 # tests/test_ros2_robot_env.py
@@ -167,12 +167,12 @@ def test_ros2_robot_env_observation_sync():
     env.close()
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `source /opt/ros/lyrical/setup.bash && python3 -m pytest tests/test_ros2_robot_env.py -v`
 Expected: FAIL with `ModuleNotFoundError: No module named 'tuinadex_teleop.envs.ros2_robot_env'`
 
-- [ ] **Step 3: Implement ROS2RobotEnv**
+- [x] **Step 3: Implement ROS2RobotEnv**
 
 In `src/tuinadex_teleop/tuinadex_teleop/envs/ros2_robot_env.py`:
 - Initialize node (or accept external node).
@@ -182,12 +182,12 @@ In `src/tuinadex_teleop/tuinadex_teleop/envs/ros2_robot_env.py`:
 - Thread-safe latest-value lock.
 - In `step(action)`: validate and clamp action via `align_command()` / `JOINT_SPEC_LIMITS`, publish command, and wait for next tick or return latest observation.
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `source /opt/ros/lyrical/setup.bash && python3 -m pytest tests/test_ros2_robot_env.py -v`
 Expected: PASS
 
-- [ ] **Step 5: Commit changes**
+- [x] **Step 5: Commit changes**
 
 ```bash
 git add src/tuinadex_teleop/tuinadex_teleop/envs/ros2_robot_env.py tests/test_ros2_robot_env.py
@@ -211,7 +211,7 @@ git commit -m "feat(teleop): implement ROS2RobotEnv topic bridge and observation
   - `RealRobotEnv(ROS2RobotEnv)`: physical hardware specialization, checks node connectivity and safety guards.
   - `make_tuina_env(env_type: str, config: RobotConfig, **kwargs) -> BaseTuinaEnv`
 
-- [ ] **Step 1: Write failing test for env factory and specialization**
+- [x] **Step 1: Write failing test for env factory and specialization**
 
 ```python
 # tests/test_env_factory.py
@@ -228,23 +228,23 @@ def test_make_tuina_env_factory():
     env_sim.close()
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `~/win_office/conda/envs/tuinadex-control/bin/python -m pytest tests/test_env_factory.py -v`
 Expected: FAIL with `cannot import name 'make_tuina_env'`
 
-- [ ] **Step 3: Implement MuJoCoEnv, RealRobotEnv, and make_tuina_env**
+- [x] **Step 3: Implement MuJoCoEnv, RealRobotEnv, and make_tuina_env**
 
 - `MuJoCoEnv`: inherits `ROS2RobotEnv`; when `standalone=True`, initializes `MujocoSimBridge` directly to allow offline/headless simulation testing without running ROS2 daemons.
 - `RealRobotEnv`: inherits `ROS2RobotEnv`; adds startup health-check (pings topics).
 - `make_tuina_env`: factory function resolving `"sim"` $\rightarrow$ `MuJoCoEnv`, `"real"` $\rightarrow$ `RealRobotEnv`.
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `~/win_office/conda/envs/tuinadex-control/bin/python -m pytest tests/test_env_factory.py -v`
 Expected: PASS
 
-- [ ] **Step 5: Commit changes**
+- [x] **Step 5: Commit changes**
 
 ```bash
 git add src/tuinadex_teleop/tuinadex_teleop/envs/ tests/test_env_factory.py
@@ -269,7 +269,7 @@ git commit -m "feat(teleop): implement MuJoCoEnv, RealRobotEnv, and make_tuina_e
   - `EpisodeBuffer`: `add_frame(state, action, images, timestamp)`, `clear()`, `__len__()`, `to_dict()`
   - `TuinaCollector`: `start_episode()`, `pause_episode()`, `stop_episode()`, `review_decision(save: bool)`
 
-- [ ] **Step 1: Write failing tests for EpisodeBuffer and Collector FSM**
+- [x] **Step 1: Write failing tests for EpisodeBuffer and Collector FSM**
 
 ```python
 # tests/test_episode_buffer.py
@@ -295,12 +295,12 @@ def test_episode_buffer_lifecycle():
     assert len(buf) == 0
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `~/win_office/conda/envs/tuinadex-control/bin/python -m pytest tests/test_episode_buffer.py -v`
 Expected: FAIL with `ModuleNotFoundError: No module named 'tuinadex_teleop.collection'`
 
-- [ ] **Step 3: Implement EpisodeBuffer and TuinaCollector FSM**
+- [x] **Step 3: Implement EpisodeBuffer and TuinaCollector FSM**
 
 In `src/tuinadex_teleop/tuinadex_teleop/collection/episode_buffer.py`:
 - Dataclass/List-backed buffer holding frames.
@@ -311,12 +311,12 @@ In `src/tuinadex_teleop/tuinadex_teleop/collection/collector.py`:
 - FSM transition methods.
 - Periodic 50Hz step loop taking actions from a teleoperator callback and writing to `EpisodeBuffer`.
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `~/win_office/conda/envs/tuinadex-control/bin/python -m pytest tests/test_episode_buffer.py tests/test_collector_fsm.py -v`
 Expected: PASS
 
-- [ ] **Step 5: Commit changes**
+- [x] **Step 5: Commit changes**
 
 ```bash
 git add src/tuinadex_teleop/tuinadex_teleop/collection/ tests/test_episode_buffer.py tests/test_collector_fsm.py
@@ -343,7 +343,7 @@ git commit -m "feat(teleop): implement EpisodeBuffer and TuinaCollector FSM"
     - Encodes RGB cameras to MP4 video chunks (`use_videos=True`)
     - Validates `meta/info.json` codebase version (`v3.0`)
 
-- [ ] **Step 1: Write failing test for LeRobotDatasetWriter with synthetic multi-camera episode**
+- [x] **Step 1: Write failing test for LeRobotDatasetWriter with synthetic multi-camera episode**
 
 ```python
 # tests/test_lerobot_v3_exporter.py
@@ -386,12 +386,12 @@ def test_lerobot_v3_multi_modal_export(tmp_path):
     assert meta["features"]["observation.images.head"]["dtype"] == "video"
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `~/win_office/conda/envs/tuinadex-vla/bin/python -m pytest tests/test_lerobot_v3_exporter.py -v`
 Expected: FAIL with `ModuleNotFoundError: No module named 'tuinadex_dataset.lerobot_exporter'`
 
-- [ ] **Step 3: Implement LeRobotDatasetWriter**
+- [x] **Step 3: Implement LeRobotDatasetWriter**
 
 In `dataset/tuinadex_dataset/lerobot_exporter.py`:
 - Configure features dictionary:
@@ -403,12 +403,12 @@ In `dataset/tuinadex_dataset/lerobot_exporter.py`:
 - Loop over buffer frames: convert images to PyTorch `(C, H, W)` tensors, call `add_frame(...)`.
 - Call `dataset.save_episode()`.
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `~/win_office/conda/envs/tuinadex-vla/bin/python -m pytest tests/test_lerobot_v3_exporter.py -v`
 Expected: PASS (1 passed)
 
-- [ ] **Step 5: Commit changes**
+- [x] **Step 5: Commit changes**
 
 ```bash
 git add dataset/tuinadex_dataset/lerobot_exporter.py tests/test_lerobot_v3_exporter.py
@@ -429,7 +429,7 @@ git commit -m "feat(dataset): implement multi-modal LeRobotDataset v3.0 exporter
 - Consumes: All modules from Tasks 1~5
 - Produces: Executable CLI tool and self-verifying test script.
 
-- [ ] **Step 1: Write e2e_collection_check.sh automation test**
+- [x] **Step 1: Write e2e_collection_check.sh automation test**
 
 Create `scripts/e2e_collection_check.sh`:
 - Runs `collect_teleop_data.py --env sim --mode hand_only --mock-teleop --episodes 1 --frames 50 --output /tmp/tuinadex_e2e_v3`.
@@ -438,12 +438,12 @@ Create `scripts/e2e_collection_check.sh`:
 - Verifies `/tmp/tuinadex_e2e_v3/data/chunk-000` contains parquet files.
 - Verifies `/tmp/tuinadex_e2e_v3/videos/chunk-000` contains mp4 files.
 
-- [ ] **Step 2: Run e2e script to verify it fails before script creation**
+- [x] **Step 2: Run e2e script to verify it fails before script creation**
 
 Run: `bash scripts/e2e_collection_check.sh`
 Expected: FAIL (script does not exist yet)
 
-- [ ] **Step 3: Implement collect_teleop_data.py and e2e_collection_check.sh**
+- [x] **Step 3: Implement collect_teleop_data.py and e2e_collection_check.sh**
 
 In `scripts/collect_teleop_data.py`:
 - Arguments: `--env sim|real`, `--mode hand_only|arm_hand`, `--cameras head,wrist`, `--repo-id`, `--mock-teleop`, `--episodes`.
@@ -453,12 +453,12 @@ In `scripts/collect_teleop_data.py`:
 
 Make `scripts/e2e_collection_check.sh` executable (`chmod +x`).
 
-- [ ] **Step 4: Run e2e test to verify it passes**
+- [x] **Step 4: Run e2e test to verify it passes**
 
 Run: `bash scripts/e2e_collection_check.sh`
 Expected: Output `[E2E COLLECTION] PASS: LeRobotDataset v3.0 created with videos and parquet`
 
-- [ ] **Step 5: Run full test suites across both conda environments**
+- [x] **Step 5: Run full test suites across both conda environments**
 
 Run:
 ```bash
@@ -467,10 +467,9 @@ Run:
 ```
 Expected: All tests PASS.
 
-- [ ] **Step 6: Commit changes**
+- [x] **Step 6: Commit changes**
 
 ```bash
 git add scripts/ docs/ README.md AGENTS.md
 git commit -m "feat(collection): deliver unified teleop data collection CLI and v3.0 e2e verification"
 ```
-

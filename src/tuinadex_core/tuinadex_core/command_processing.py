@@ -10,7 +10,7 @@ from __future__ import annotations
 from typing import Optional, Sequence, Tuple
 import numpy as np
 
-from .names import CANONICAL_JOINT_NAMES
+from .names import CANONICAL_JOINT_NAMES, CANONICAL_ARM_JOINT_NAMES
 
 
 # 规范逐关节关节空间限位 (rad, 相对全开位 0) — 与 LEAP_HAND_MVP_INTERFACE_SPEC §1 一致。
@@ -22,6 +22,17 @@ JOINT_SPEC_LIMITS = np.array([
     [-0.35, 0.35], [0.0, 2.00], [0.0, 1.85], [0.0, 1.80],   # ring
     [-0.30, 1.80], [0.0, 1.60], [0.0, 1.80], [0.0, 1.80],   # thumb
 ], dtype=np.float64)
+
+# 6-DOF reBot B601-RS 机械臂物理与安全关节限位 (rad)
+ARM_SPEC_LIMITS = np.array([
+    [-2.80, 2.80],   # joint1
+    [0.00,  3.14],   # joint2
+    [0.00,  3.14],   # joint3
+    [-1.57, 1.57],   # joint4
+    [-1.57, 1.57],   # joint5
+    [-3.14, 3.14],   # joint6
+], dtype=np.float64)
+
 
 
 def align_command(
@@ -52,3 +63,37 @@ def align_command(
             q = ordered
     # 安全护栏: 越界指令被夹到 Spec §1 逐关节限位边沿 (绝不把越界弧度传给电机)。
     return np.clip(q, JOINT_SPEC_LIMITS[:, 0], JOINT_SPEC_LIMITS[:, 1]), ""
+
+
+def align_arm_command(
+    positions: Sequence[float],
+    names: Optional[Sequence[str]] = None,
+    limits: Optional[np.ndarray] = None,
+) -> Tuple[Optional[np.ndarray], str]:
+    """校验、重排为 6 维机械臂 Canonical 目标弧度, 并夹取到规范限位."""
+    pos = np.asarray(list(positions), dtype=np.float64)
+    if pos.shape != (6,):
+        return None, f"dim_mismatch: expected 6, got {pos.shape[0]}"
+
+    if not np.all(np.isfinite(pos)):
+        bad = np.nonzero(~np.isfinite(pos))[0].tolist()
+        return None, f"non_finite at indices {bad}"
+
+    q = pos
+    if names:
+        if len(names) != 6:
+            return None, f"name_dim_mismatch: expected 6 names, got {len(names)}"
+        if list(names) != CANONICAL_ARM_JOINT_NAMES:
+            name_to_idx = {n: i for i, n in enumerate(CANONICAL_ARM_JOINT_NAMES)}
+            unknown = [n for n in names if n not in name_to_idx]
+            if unknown:
+                return None, f"unknown_joint_names: {unknown}"
+            ordered = np.zeros(6, dtype=np.float64)
+            for src, n in enumerate(names):
+                ordered[name_to_idx[n]] = pos[src]
+            q = ordered
+
+    arm_limits = limits if limits is not None else ARM_SPEC_LIMITS
+    # 安全护栏: 越界指令被夹到逐关节限位边沿
+    return np.clip(q, arm_limits[:, 0], arm_limits[:, 1]), ""
+

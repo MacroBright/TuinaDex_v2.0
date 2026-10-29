@@ -152,7 +152,25 @@ ros2 launch tuinadex_teleop teleop.launch.py
   ```
   *验证指标: Mock 控制节点 + 示教录制 + 50Hz 离线时间对齐 + LeRobot Parquet 数据集落地。*
 
-### 4.4 运行多矩阵单元测试
+- **多模态数据采集与 LeRobotDataset v3.0 闭环自检**:
+  ```bash
+  bash scripts/e2e_collection_check.sh
+  ```
+  *验证指标: 仿真环境、双目相机 (head, wrist) 视频流分块编码、50Hz 关节状态对齐、生成原生 LeRobotDataset v3.0 目录 (MP4 + Parquet)。*
+
+### 4.4 多模态数据采集快速上手 (Data Collection Quickstart)
+```bash
+# 激活具身基座环境
+source scripts/activate_tuinadex.sh vla
+
+# 1. 运行仿真环境数据采集 (自适应 16D 手部或 22D 臂手，双目相机)
+python scripts/collect_teleop_data.py --env sim --mode hand_only --cameras head,wrist --repo-id data/tuina_demo
+
+# 2. 一键切换至真机数据采集 (上层录制与 LeRobot 代码零改动)
+python scripts/collect_teleop_data.py --env real --mode hand_only --cameras head,wrist --repo-id data/tuina_real_demo
+```
+
+### 4.5 运行多矩阵单元测试
 ```bash
 # 1. 基础逻辑、遥操映射与仿真桥接测试 (tuinadex-control 环境)
 ~/win_office/conda/envs/tuinadex-control/bin/python -m pytest tests/ -v

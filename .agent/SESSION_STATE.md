@@ -5,20 +5,35 @@
 
 ## 1. 当前任务目标 (Active Goal)
 - **任务主题**: TuinaDex v2.0 引入 MuJoCo 仿真模块 (`tuinadex_sim`) 与真机/仿真统一控制架构
+- **关联需求 / Issue**: `docs/superpowers/plans/2026-09-21-tuinadex-sim-phase3.md` & `docs/specs/ENVIRONMENT_MANAGEMENT_SPEC.md`
+- **发起时间**: 2026-09-21 (2026-10-28 协作协议升级)
+- **工程完整性模式 (Integrity Mode)**: `development` (允许成熟框架与标准库，严禁测试伪造打桩与空壳，严格硬件安全红线)
+- **协同迭代轮次**: 1 / 5 (熔断阈值: 5 轮，超限将挂起并升级至人类裁决)
 - **核心原则**:
   1. 真机与仿真 100% 共享 ROS 2 通信接口 (`/hand/joint_command` & `/hand/joint_states`)；
   2. 统一切换架构：支持 `ros2 launch tuinadex_hand hand.launch.py use_sim:=true/false` 一键无缝切换；
   3. 动力学保真：500Hz 物理循环 (dt=0.002s) + 50Hz ROS2 降采样，集成推拿床与人体背部假人刚体接触模型。
-- **发起时间**: 2026-09-21
 
-## 2. 流水线阶段与 Agent 职责分工 (4-Phase Collaboration Pipeline)
-- [x] **Phase 1: 广域侦察与资产规范** (Antigravity 主导 · 看得广 - 完成 MuJoCo 3.13 宿主环境验证、8 组 STL 网格规范化、16-DOF Canonical URDF 与推拿床/假人 URDF 建模、MuJoCo MJCF 动力学世界构建、MujocoSimBridge 纯逻辑开发与单元测试 5/5 全绿、全工程 4 功能包 colcon 编译通过、知识图谱沉淀、出版级双模系统架构图交付)
-- [x] **Phase 2: 深度规划与质量裁决** (Claude Code 主导 · 想得深 - 审视 sim/real 统一切换 launch 架构、看门狗在仿真下的超时保护机制、动力学接触阻尼参数、编写详细 implementation_plan.md)
-  - **三项架构裁决 (用户拍板)**：① 单线程 50Hz Timer + 每 tick 10 次 0.002s 子步进（严格 500Hz 物理积分，弃后台物理线程）；② 新建 `tuinadex_core` 共享纯逻辑包消除 hand↔sim 循环依赖；③ 仿真端 Relax 镜像真机 hold+ramp 平滑回退。均已成 Invariant 16/17/18。
-- [x] **Phase 3: 手术级执行与交叉审查** (Codex 主导执行 · 改得准 + Claude Code 监督 - 极速落地 `leap_hand_sim_node` 完整控制循环、`hand.launch.py` 统一切换、ROS2 仿真话题集成测试与端到端闭环验证)
-- [x] **Phase 4: 全局复核与文档闭环** (Antigravity 主导 · 看得广 - 仿真/真机双模式全回归构建、多矩阵测试覆盖、更新项目 README 与架构文档闭环、ADR 0002 沉淀、长程知识图谱同步)
+## 2. 流水线阶段与工单状态机 (Pipeline & Task Locks)
+### 阶段分工与推荐工具
+- [x] **Phase 1: 广域侦察与资产规范** (Seat 1: Antigravity 主导 · 看得广 | 专属 Skills: `diagram-design`, `research`, `domain-modeling`, `documentation-and-adrs`, `verification-before-completion`)
+  - 完成 MuJoCo 3.13 宿主环境验证、8 组 STL 网格规范化、16-DOF Canonical URDF 与推拿床/假人 URDF 建模、MuJoCo MJCF 动力学世界构建、MujocoSimBridge 纯逻辑开发与单元测试 5/5 全绿、全工程 4 功能包 colcon 编译通过、知识图谱沉淀、出版级双模系统架构图交付。
+- [x] **Phase 2: 深度规划与质量裁决** (Seat 2: Claude Code 主导 · 想得深 | 专属 Skills: `writing-plans`, `constraint-driven-development`, `subagent-driven-development`, `two-axis-review`, `robotics-hardware-safety`)
+  - 审视 sim/real 统一切换 launch 架构、看门狗在仿真下的超时保护机制、动力学接触阻尼参数、编写详细 implementation_plan.md。三项架构裁决拍板并固化为 Invariant 16/17/18。
+- [x] **Phase 3: 手术级执行与交叉审查** (Seat 3: Codex 主导执行 · 改得准 + Claude Code 监督 | 专属 Skills: `test-driven-development`, `incremental-implementation`, `code-simplification`, `systematic-debugging`, `doubt-driven-development`)
+  - 极速落地 `leap_hand_sim_node` 完整控制循环、`tuinadex_core` 下沉、`hand.launch.py` 统一切换、ROS2 仿真话题集成测试与端到端闭环验证。
+- [x] **Phase 4: 全局复核与对抗门禁** (Seat 1: Antigravity 主导 · Critic 规范评审 / Challenger 压力反例 / Auditor 真实性审计 | 专属 Skills: `verification-before-completion`, `documentation-and-adrs`, `diagram-design`)
+  - 仿真/真机双模式全回归构建、多矩阵测试覆盖 (47 passed + 6 skipped / 4 passed)、更新项目 README 与架构文档闭环、ADR 0002 沉淀、长程知识图谱同步。
 
-**当前进度**: Phase 1 ~ Phase 4 完整协同接力流水线圆满收敛。5 个功能包 colcon build 编译全过，多环境单元与集成测试矩阵全绿 (47 passed + 6 skipped / 5 passed + 2 skipped / 4 passed)，MuJoCo 仿真与 Mock 双模式端到端脚本 (`e2e_sim_check.sh` / `e2e_mock_check.sh`) 自动化验证通过，双分支 launch 验证无误，ADR 0002 与 README 已完备，长程图谱与接力黑板完成归档。
+### 细分工单原子锁与排他文件领空 (Atomic Task Checkout & Exclusive File Ownership)
+> 规则：任务原子认领必须绑定独占文件领空 `[FILES: ...]`, 任一文件同一时刻严禁被两个 Agent 同时修改。
+- `[COMPLETED] [FILES: src/tuinadex_sim/]` <子任务 1: MuJoCo 动力学仿真功能包与数字孪生场景构建> (Antigravity 已归档)
+- `[COMPLETED] [FILES: docs/superpowers/plans/]` <子任务 2: 统一架构规划、架构裁决与 Phase 3 方案设计> (Claude Code 已归档)
+- `[COMPLETED] [FILES: src/tuinadex_core/, src/tuinadex_sim/tuinadex_sim/leap_hand_sim_node.py]` <子任务 3: 核心逻辑下沉与 50Hz 仿真节点落地> (Codex 已归档)
+- `[COMPLETED] [FILES: tests/, scripts/verify_all_envs.sh, scripts/activate_tuinadex.sh]` <子任务 4: 多端异构环境管理与双基座收敛门禁> (Antigravity 已归档)
+- `[PENDING] [FILES: src/tuinadex_hand/]` <子任务 5: LEAP Hand 实体真机接驳联调与物理看门狗测试> (待认领)
+
+**当前进度**: Phase 1 ~ Phase 4 完整协同接力流水线圆满收敛。5 个功能包 colcon build 编译全过，多环境单元与集成测试矩阵全绿 (47 passed + 6 skipped / 5 passed + 2 skipped / 4 passed)，MuJoCo 仿真与 Mock 双模式端到端脚本 (`e2e_sim_check.sh` / `e2e_mock_check.sh`) 自动化验证通过，双分支 launch 验证无误，ADR 0002 与 README 已完备，长程图谱与接力黑板完成归档。多 Agent 协作协议与排他领空机制已全面同步。
 
 ## 3. 协作推进记录与实证 (Completed Work & Evidence)
 | 时间 | 执行 Agent | 完成内容 | 验证依据 (测试命令 / 构建结果) | Git Commit |
@@ -34,9 +49,11 @@
 | 2026-09-21 | Antigravity | **Phase 4: 全局复核与文档闭环**: 5 包全量 colcon build 回归通过；多环境单元与集成测试矩阵全绿（47 passed / 5 passed / 4 passed）；双模式端到端自动化脚本闭环验证（131 帧 sim / 146 帧 mock 全 PASS）；双模 launch 成功拉起验证；沉淀 ADR 0002、README.md、长程图谱实体与关系；全流水线闭环归档 | 5 包 colcon build 3.98s 通过；pytest tests/ 全绿；bash scripts/e2e_sim_check.sh PASS；bash scripts/e2e_mock_check.sh PASS；ros2 launch 双模式验证通过 | `bcb3a64` |
 | 2026-10-14 | Antigravity | **多端异构环境管理架构落地**: 制定 `ENVIRONMENT_MANAGEMENT_SPEC`；交付 Udev 硬件规则、CycloneDDS 跨端基线 (ROS_DOMAIN_ID=42)、香橙派 CAN systemd 服务、数据清洗与云端 VLA Dockerfile 及 `verify_all_envs.sh` 全景自检工具；全流程自动化单测通过 | `pytest tests/test_env_management.py` 8 passed; `bash scripts/verify_all_envs.sh` 全检通过 | `a9db14b`, `5859520` |
 | 2026-10-22 | Antigravity | **宿主机双基座环境收敛与准入门禁**: 废弃碎片环境，全面对齐 `tuinadex-control` 与 `tuinadex-vla` 双基座；交付一键激活脚本与导出锁定文件；建立环境依赖变更放行门禁 (Invariant 24) | `pytest tests/test_env_management.py` 9 passed; `bash scripts/verify_all_envs.sh` 全检通过; 双模 E2E PASS | `9ef320f` |
+| 2026-10-29 | Antigravity | **多模态数据采集框架构建与 LeRobot v3.0 闭环**: 落地 `RobotConfig` 自适应 16D/22D 维度、`BaseTuinaEnv` 抽象、`ROS2RobotEnv` 话题桥接、`MuJoCoEnv` / `RealRobotEnv` 特化、`EpisodeBuffer` 试次缓冲与 `TuinaCollector` 状态机；交付 `LeRobotDatasetWriter` 直通 LeRobotDataset v3.0 视频分块 (MP4 + Parquet)；交付 `collect_teleop_data.py` 入口脚本与 `e2e_collection_check.sh` 自动化端到端回环 | 单元测试全绿 (9 passed / 2 passed / 6 passed); 5 包 colcon build 通过; `bash scripts/e2e_collection_check.sh` PASS (30 帧双目视频 + Parquet 验证通过) | `9288c30` |
 
 
-## 4. 核心技术决策与不变量 (Decisions & Invariants)
+## 4. 技术决策与认知反思沉淀 (Decisions & Reflections)
+### 4.1 核心技术决策与不变量 (Invariants)
 - **不变量 1 (坐标与单位)**: ROS2 与 LeRobot 全链路强制 SI 单位弧度 (rad)。以实测校准后的 `OPEN_POSE`（全开平伸）为 0 rad 基准零位，手指屈伸弯曲为正 ($q > 0$)。
 - **不变量 2 (双域解耦)**: ROS2 负责机器人运行时（Runtime）；LeRobot 负责策略学习（Learning）。LeRobot 绝对禁止跨过 ROS2 直连硬件；ROS2 Topic 绝对不为 LeRobot Schema 强行妥协。
 - **不变量 3 (数据源契约)**: `rosbag2` 为唯一实验原始事实源 (Source of Truth)；`LeRobotDataset` 为衍生训练数据产品。解耦通过离线 `tuinadex_dataset` 工具完成。
@@ -62,15 +79,48 @@
 - **不变量 22 (AI 数据转换环境容器隔离, 2026-10-14 追加)**: `rosbag2 -> LeRobotDataset` 的离线转换与云端训练运行在专属 Docker 容器中，避免本地 Ubuntu 26.04 (Python 3.14) 对 PyTorch/LeRobot 依赖生态的破坏。
 - **不变量 24 (环境依赖准入与变更门禁规则, 2026-10-22 追加)**: 任何涉及项目运行环境、Conda 环境、Docker 容器、系统依赖、pip 包或通信协议配置的改动，必须严格遵循《多端异构环境管理架构设计规范》(`docs/specs/ENVIRONMENT_MANAGEMENT_SPEC.md`)。改动前须核验环境归属唯一性与防污染原则，改动后必须运行 `bash scripts/verify_all_envs.sh` 全检通过并同步更新导出的 Conda 锁定文件（`scripts/env/*.yml`），方可放行与合并。
 
+### 4.2 结构化认知反思 (Reflections · 经验升华)
+| 触发场景 (Trigger) | 踩坑诱因 (Gotcha) | 升华法则 (Crystallized Invariant) |
+| :--- | :--- | :--- |
+| MuJoCo 动力学仿真失稳发散 | 默认 Euler 积分器在刚体接触碰撞时高频数值震荡 | 物理仿真强制锁定 `implicitfast` 隐式快速积分器 (Invariant 16) |
+| hand 与 sim 相互 import 环路 | 驱动和仿真均需复用限位与命令处理逻辑 | 提取纯逻辑下沉包 `tuinadex_core`，消除循环依赖收敛为 DAG (Invariant 17) |
+| 仿真端断联回退发生动力学跳变 | 仿真节点单步直接重置为 0 rad 造成机构冲击 | 仿真 Relax-to-OPEN 逐点复刻真机 hold (0.3s) + ramp (0.6s) 平滑回退 (Invariant 18) |
+| 宿主机多版本 Python/Conda 冲突 | Ubuntu 26.04 (Python 3.14) 破坏 PyTorch/LeRobot 生态 | 废弃散落环境，收敛为 `tuinadex-control` 与 `tuinadex-vla` 双基座 (Invariant 23/24) |
+| 跨端 ROS2 通信数据丢包与错位 | 本地 PC 26.04 Lyrical 与香橙派 22.04 Humble 混用非标消息 | 全网锁定 Eclipse CycloneDDS，统一 ROS_DOMAIN_ID=42，仅传标准消息 (Invariant 19) |
 
 ## 5. 接力指令 (Handoff to Next Agent)
-- **状态**: **多端异构环境管理架构设计规范已冻结 (SPEC-ENV-2026-10-14 落地)**
-- **当前负责人**: **Antigravity / 待转交 Claude Code 或根据用户指令实施环境脚手架脚本**
-- **当前产出物**:
-  1. 完整架构规范文档：[`docs/superpowers/specs/2026-10-14-environment-management-architecture-design.md`](docs/superpowers/specs/2026-10-14-environment-management-architecture-design.md)；
-  2. 规范入口索引：[`docs/specs/ENVIRONMENT_MANAGEMENT_SPEC.md`](docs/specs/ENVIRONMENT_MANAGEMENT_SPEC.md)；
-  3. 共享知识图谱已沉淀 4 个核心实体与关键环境约束；
-  4. 新增 Invariants 19~22 已写入黑板。
-- **硬件安全红线提示**:
-  物理舵机真机连接（`use_sim:=false mock:=false`）需在接驳真实物理供电与串口、且有急停预案的前提下由人工审核后执行。机械臂需确保在 70% 臂展内安全运动。
+- **状态**: **多端异构环境管理架构规范冻结 + 双基座收敛门禁已落地 + 多 Agent 协作协议全面升级**
+- **接手 Agent 启动动作**:
+  1. 运行环境准入门禁：`bash scripts/verify_all_envs.sh`
+  2. 运行双基座单测：`source scripts/activate_tuinadex.sh control && pytest tests/ -v`
+- **未决疑问与风险提示**:
+  - 物理舵机真机连接（`use_sim:=false mock:=false`）需在接驳真实物理供电与串口、且有急停预案的前提下由人工审核后执行。
+  - 机械臂需确保在 70% 臂展内安全运动。
 
+## 6. 本轮协作闭环总结汇报 (Collaboration Debriefing)
+- **任务目标与完成度**: 100% 完成，LEAP Hand 16-DOF 仿真与控制闭环、双基座环境收敛与多 Agent 协议升级全部交付。
+- **各 Agent 贡献清单**:
+  - `Antigravity`: 完成 Phase 1 广域侦察、URDF/MJCF 动力学建模、双基座环境管理架构 (SPEC-ENV) 与 Phase 4 全景回归验证。
+  - `Claude Code`: 完成 Phase 2 深度规划与质量裁决 (Invariant 16/17/18)、双轴交叉审查 (`two-axis-review`)。
+  - `Codex`: 完成 Phase 3 手术级执行与 TDD 测试套件落地，交付 `tuinadex_core` 与 `leap_hand_sim_node`。
+- **验证实证**:
+  - 5 个功能包 `colcon build` 编译全过；
+  - 多环境单元与集成测试矩阵全绿 (`tuinadex-control` 47 passed + 6 skipped / `tuinadex-vla` 4 passed)；
+  - 自动化环境检验 `bash scripts/verify_all_envs.sh` 100% [PASS]；
+  - 双模式端到端自动化脚本闭环验证 (`e2e_sim_check.sh` / `e2e_mock_check.sh`) 全绿 PASS。
+- **后续建议 / 未决项**:
+  - 下一里程碑推荐：推进物理 LEAP Hand 真机接驳联调（带急停）或推进 6-DOF 机械臂与视觉感知节点集成。
+
+
+
+
+<!-- PRECOMPACT_SNAPSHOT_START -->
+### 🔄 PreCompact 压缩前夕现场快照 (2026-10-28 15:21:47)
+> [!NOTE]
+> 本区块由 PreCompact 钩子自动生成。会话压缩后，Agent 应首先依据此快照对齐工作现场。
+- **分支状态**: `master` | **最近提交**: `9b2c7e0 feat(gate): establish environment change gate and invariant 24`
+- **工作区脏文件 (Top 15)**:
+```text
+
+```
+<!-- PRECOMPACT_SNAPSHOT_END -->

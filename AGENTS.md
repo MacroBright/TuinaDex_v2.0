@@ -11,6 +11,29 @@ TuinaDex 是面向中医推拿/按摩场景构建的具身智能机器人系统�
 `ROS2 运行时 -> 遥操作示教 -> rosbag2 数据记录 -> Dataset Adapter -> LeRobot 策略学习 -> ROS2 真机推理部署`。
 后续再无缝平滑扩展至 6-DOF 机械臂与视觉感知系统。
 
+### 五层分层架构（严禁跨层调用）
+```
+┌────────────────────────────────────────────────────────┐
+│ 5. AI / Policy Layer (LeRobot / SmolVLA / ACT)         │  -> tuinadex-vla (CUDA 12.8)
+└───────────────────────────┬────────────────────────────┘
+                            │ Observation / Action (16D rad)
+┌───────────────────────────▼────────────────────────────┐
+│ 4. ROS2 Middleware Layer (Nodes, rosbag2, Teleop)      │  -> tuinadex-control
+└───────────────────────────┬────────────────────────────┘
+                            │ /hand/joint_command & /hand/joint_states
+┌───────────────────────────▼────────────────────────────┐
+│ 3. Control & Safety Layer (Watchdog FSM, Clamping)     │  -> tuinadex_core
+└───────────────────────────┬────────────────────────────┘
+                            │ Verified Radian Array / Safe Hold+Ramp
+┌───────────────────────────▼────────────────────────────┐
+│ 2. Driver & Bridge Layer (LeapDriver, MujocoSimBridge) │  -> tuinadex_hand / tuinadex_sim
+└───────────────────────────┬────────────────────────────┘
+                            │ Dynamixel Protocol 2.0 / 500Hz Substep
+┌───────────────────────────▼────────────────────────────┐
+│ 1. Hardware / Simulation Layer (LEAP Hand / MuJoCo)    │  -> U2D2 USB-TTL / tuina_scene.xml
+└────────────────────────────────────────────────────────┘
+```
+
 ---
 
 ## 2. 技术栈与运行环境
@@ -79,6 +102,12 @@ TuinaDex 是面向中医推拿/按摩场景构建的具身智能机器人系统�
   `source /opt/ros/lyrical/setup.bash && python3 -m pytest tests/test_sim_node_integration.py -v`
 - MuJoCo 统一入口 E2E：
   `bash scripts/e2e_sim_check.sh`
+- 多模态数据采集与 LeRobot v3.0 导出测试 (tuinadex-vla)：
+  `~/win_office/conda/envs/tuinadex-vla/bin/python -m pytest tests/test_lerobot_v3_exporter.py -v`
+- 多模态数据采集与 LeRobot v3.0 端到端闭环 E2E：
+  `bash scripts/e2e_collection_check.sh`
+- 数据采集运行入口：
+  `python scripts/collect_teleop_data.py --env sim|real --mode hand_only|arm_hand --cameras head,wrist`
 
 ---
 
@@ -99,4 +128,27 @@ TuinaDex 是面向中医推拿/按摩场景构建的具身智能机器人系统�
    - 任何涉及环境、依赖、脚本改动的代码提交前，必须运行全套自动化环境验证：
      `bash scripts/verify_all_envs.sh`
    - 只有当环境自动化测试（`test_env_management.py`）全绿且系统诊断全部为 `[PASS]` 时，才允许放行与合入主分支。
+
+---
+
+## 7. 多 Agent 协作与对抗验证门禁 (Multi-Agent Collab & Verification Protocol)
+项目全面遵循全局多智能体协作与长程接力协议（`~/.codex/AGENTS.md` §14）：
+
+1. **工位协同矩阵 (Collab Matrix)**:
+   - **Antigravity** (Seat 1: Recon & Review · 看得广): 负责全局架构分析、MuJoCo 仿真与环境建模、长程知识图谱沉淀 (`~/.agent-memory/knowledge-graph.jsonl`)、端到端全链路终验。
+   - **Claude Code** (Seat 2: Lead & Arch · 想得深): 负责需求纵深拆解、Invariants 质量与硬件安全裁决、并发状态机死锁检测、签发 `implementation_plan.md`。
+   - **Codex** (Seat 3: Coder · 改得准): 负责高密度代码落地、TDD 单元测试套件开发、协议编解码与驱动实现。
+2. **对抗性验证门禁体系 (Adversarial Verification Tier)**:
+   - **Critic (代码规范审查员)**: 审查 PEP 8 / Google 规范、接口契约与代码内聚度。
+   - **Challenger (对抗性压力测试员)**: 在 `agents/challenger.md` 定义，针对系统边界构造极端输入、最差复杂度、丢帧与超时故障，跑红用例方为及格。
+   - **Auditor (真实性审计员)**: 在 `agents/auditor.md` 定义，审查终端命令输出，彻底拦截空断言、测试打桩 (Anti-Mock) 与跳过测试 (`skip`)。
+   - **Success Auditor (终验守门员)**: 跨模块全量构建与 E2E 双模回环验证全绿放行。
+3. **排他性文件领空原则 (Exclusive File Ownership)**:
+   - 子任务原子认领必须绑定独占文件：`- [LOCKED: Codex] [FILES: src/.../leap_driver.py] <任务描述>`。
+   - 同一时刻一个文件严禁被两个 Agent 同时修改，杜绝 Git 冲突与脏写。
+4. **长程反思与经验升华 (Reflect)**:
+   - 排查出隐蔽缺陷或死锁后，强制以标准 Schema 升华写入黑板 Section 4 与长程图谱：`{触发场景 (Trigger) → 踩坑诱因 (Gotcha) → 升华法则 (Crystallized Invariant)}`。
+5. **PreCompact 抗失忆钩子与现场快照**:
+   - 联动 Claude Code 的 `PreCompact` 钩子（工具 `collab-precompact`），在长会话压缩前夕将分支、脏文件与快照自动持久化写入黑板。
+
 
