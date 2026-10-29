@@ -3,8 +3,9 @@ import os
 import sys
 from pathlib import Path
 
-# Isolate ROS 2 domain during testing to prevent crosstalk with running daemon/GUI nodes
-os.environ.setdefault("ROS_DOMAIN_ID", "42")
+# If running under Python != 3.14 (e.g. Conda Python 3.10), clean incompatible ROS2 3.14 paths from sys.path
+if sys.version_info < (3, 14):
+    sys.path = [p for p in sys.path if not ("/opt/ros/lyrical/lib/python3.14" in p)]
 
 ROOT = Path(__file__).resolve().parents[1]
 for p in ("tuinadex_core", "tuinadex_hand", "tuinadex_sim", "tuinadex_teleop", "tuinadex_arm", "tuinadex_recorder"):

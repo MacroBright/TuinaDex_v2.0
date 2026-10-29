@@ -6,9 +6,17 @@ import time
 from typing import Any, Sequence
 import numpy as np
 
-import rclpy
-from rclpy.node import Node
-from sensor_msgs.msg import JointState, Image
+try:
+    import rclpy
+    from rclpy.node import Node
+    from sensor_msgs.msg import JointState, Image
+    HAS_RCLPY = True
+except (ImportError, ModuleNotFoundError):
+    rclpy = None
+    Node = object  # type: ignore
+    JointState = None  # type: ignore
+    Image = None  # type: ignore
+    HAS_RCLPY = False
 
 from tuinadex_core.names import CANONICAL_JOINT_NAMES, CANONICAL_ARM_JOINT_NAMES
 from tuinadex_core.command_processing import align_command, JOINT_SPEC_LIMITS
@@ -59,6 +67,11 @@ class ROS2RobotEnv(BaseTuinaEnv):
         spin_timeout_sec: float = 0.005,
     ):
         super().__init__(config)
+        if not HAS_RCLPY and existing_node is None:
+            raise RuntimeError(
+                "ROS 2 (rclpy/sensor_msgs) is not available in the current Python environment. "
+                "Please run with system ROS 2 environment (Python 3.14) or pass an existing mock node."
+            )
         self._owns_node = existing_node is None
         if self._owns_node:
             if not rclpy.ok():
