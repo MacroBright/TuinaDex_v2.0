@@ -91,12 +91,16 @@ TuinaDex 是面向中医推拿/按摩场景构建的具身智能机器人系统�
 - 宿主机控制、仿真与遥操单测 (tuinadex-control)：
   `~/win_office/conda/envs/tuinadex-control/bin/python -m pytest tests/ -v`
 - ROS2 集成测试（宿主机 Lyrical Desktop）：
-  `source /opt/ros/lyrical/setup.bash && python3 -m pytest tests/test_leap_hand_node_integration.py tests/test_recorder_node.py -v`
+  `source /opt/ros/lyrical/setup.bash && source install/setup.bash && python3 -m pytest tests/test_leap_hand_node_integration.py tests/test_arm_node_integration.py tests/test_sim_node_integration.py tests/test_tuinadex_bringup_launch.py tests/test_arm_hand_unified_control.py tests/test_recorder_node.py tests/test_ros2_robot_env.py -v`
 - LeRobot 适配器与学习测试 (tuinadex-vla)：
-  `~/win_office/conda/envs/tuinadex-vla/bin/python -m pytest tests/test_dataset_adapter.py -v`
-- 构建：
-  `source /opt/ros/lyrical/setup.bash && colcon build --symlink-install --packages-select tuinadex_core tuinadex_hand tuinadex_teleop tuinadex_recorder tuinadex_sim`
-- 无真机端到端闭环：
+  `~/win_office/conda/envs/tuinadex-vla/bin/python -m pytest tests/test_dataset_adapter.py tests/test_lerobot_v3_exporter.py -v`
+- 构建（8 包全量）：
+  `source /opt/ros/lyrical/setup.bash && colcon build --symlink-install`
+- 臂手 22 维联合控制与双模式启动端到端闭环 E2E：
+  `bash scripts/e2e_unified_robot_check.sh`
+- 整机统一启动入口：
+  `ros2 launch tuinadex_bringup robot.launch.py mode:=arm_hand use_sim:=true|false mock:=true|false`
+- 无真机灵巧手端到端闭环：
   `bash scripts/e2e_mock_check.sh`
 - MuJoCo 仿真节点集成测试：
   `source /opt/ros/lyrical/setup.bash && python3 -m pytest tests/test_sim_node_integration.py -v`

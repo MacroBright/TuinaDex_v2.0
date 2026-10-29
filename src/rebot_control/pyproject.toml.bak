@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "rebot-control"
+version = "0.1.0"
+description = "MIT position control SDK for reBot Arm B601-RS based on MotorBridge and CAN"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "motorbridge>=0.5.6",
+    "pyyaml>=6.0",
+]
+
+[project.optional-dependencies]
+keyboard = [
+    "pynput>=1.7.0",
+]
+test = [
+    "pytest>=7.0",
+]
+
+[project.scripts]
+rebot-cli = "rebot.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["rebot*"]
+

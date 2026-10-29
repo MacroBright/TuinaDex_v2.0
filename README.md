@@ -7,7 +7,7 @@
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 
 TuinaDex 是面向中医推拿/理疗场景构建的具身智能机器人系统。
-当前阶段专注于 **16-DOF LEAP Hand 灵巧手** 的高可靠软硬件与数字孪生闭环系统：
+当前阶段专注于 **6-DOF 机械臂 + 16-DOF LEAP Hand 灵巧手 (共 22-DOF)** 的高可靠软硬件与数字孪生闭环系统：
 `ROS2 运行时 / MuJoCo 仿真 -> 遥操作示教 -> rosbag2 数据记录 -> 离线对齐与校验 -> LeRobot 策略学习 -> ROS2 闭环部署`。
 
 ---
@@ -106,39 +106,53 @@ flowchart TD
 
 ## 4. 构建与快速上手 (Quickstart)
 
-### 4.1 编译 ROS2 功能包 (5 包全量)
+### 4.1 编译 ROS2 功能包 (8 包全量)
 ```bash
 source /opt/ros/lyrical/setup.bash
-colcon build --symlink-install --packages-select tuinadex_core tuinadex_hand tuinadex_teleop tuinadex_recorder tuinadex_sim
+colcon build --symlink-install
 source install/setup.bash
 ```
 
-### 4.2 双模式一键启动 (Dual-Mode Launch)
+### 4.2 臂手协同双模式一键启动 (Unified Dual-Mode Launch)
 
-#### 模式 1: MuJoCo 数字孪生仿真启动 (推荐验证模式)
+通过 `tuinadex_bringup` 提供的顶层统一入口 `robot.launch.py`，实现 6-DOF 臂与 16-DOF 手的协同调度：
+
+#### 模式 1: 真实物理硬件 / Mock 驱动启动 (`use_sim:=false`)
 ```bash
-# 1. 启动 MuJoCo 仿真环境并弹出 3D 实时可视化画面 (推荐手动联调使用)
-ros2 launch tuinadex_hand hand.launch.py use_sim:=true gui:=true
+# 1. 22 维臂手协同真机启动 (连接 USB-TTL 串口与 SocketCAN can0)
+ros2 launch tuinadex_bringup robot.launch.py mode:=arm_hand use_sim:=false hand_port:=/dev/ttyUSB0 arm_channel:=can0
+
+# 2. 22 维脱机 Mock 安全回环启动 (CI 与无物理硬件调试推荐)
+ros2 launch tuinadex_bringup robot.launch.py mode:=arm_hand use_sim:=false mock:=true
+
+# 3. 单独启动 16 维灵巧手或 6 维机械臂
+ros2 launch tuinadex_bringup robot.launch.py mode:=hand_only mock:=true
+ros2 launch tuinadex_bringup robot.launch.py mode:=arm_only mock:=true
+```
+
+#### 模式 2: MuJoCo 数字孪生仿真启动 (`use_sim:=true`)
+```bash
+# 1. 启动 22 维协同数字孪生仿真并弹出 3D 渲染窗口
+ros2 launch tuinadex_bringup robot.launch.py mode:=arm_hand use_sim:=true gui:=true
 
 # 2. 纯后台无头模式运行 (Headless, 适用于自动化脚本与 CI)
-ros2 launch tuinadex_hand hand.launch.py use_sim:=true
+ros2 launch tuinadex_bringup robot.launch.py mode:=arm_hand use_sim:=true
 ```
 
-#### 模式 2: 真实物理硬件 / Mock 驱动启动
+#### 独立单手/单臂 Launch (兼容既有习惯)
 ```bash
-# 启动真实硬件驱动 (需连接 USB-TTL 串口 /dev/ttyUSB0 并获授权)
-ros2 launch tuinadex_hand hand.launch.py use_sim:=false port:=/dev/ttyUSB0
-
-# 启动硬件 Mock 模式 (无物理串口时回环自检)
-ros2 launch tuinadex_hand hand.launch.py use_sim:=false mock:=true
-```
-
-#### 启动遥操作手势捕捉 (可选)
-```bash
+ros2 launch tuinadex_hand hand.launch.py use_sim:=true|false mock:=true
+ros2 launch tuinadex_arm arm.launch.py mock:=true
 ros2 launch tuinadex_teleop teleop.launch.py
 ```
 
 ### 4.3 自动化端到端回环验证 (E2E Checks)
+
+- **22 维臂手协同与双模式启动终验自检**:
+  ```bash
+  bash scripts/e2e_unified_robot_check.sh
+  ```
+  *验证指标: Mock 硬件启动、MuJoCo 仿真启动、22 维指令分发与状态聚合、300ms 看门狗联合回退、直通 LeRobotDataset v3.0 22 维多模态导出。*
 
 - **MuJoCo 仿真统一入口闭环自检**:
   ```bash
@@ -197,13 +211,16 @@ TuinaDex_v2.0/
 │   └── superpowers/plans/       # Phase 3 实施规划与审查记录
 ├── dataset/                     # 离线数据处理与 LeRobot 适配器包 (tuinadex_dataset)
 │   └── tuinadex_dataset/        # bag_reader, synchronizer, validator, adapter, cli
-├── src/                         # ROS2 源码空间 (5 个模块化功能包)
+├── src/                         # ROS2 源码空间 (8 个模块化功能包)
 │   ├── tuinadex_core/           # 共享纯逻辑包 (规范关节名、逐关节限位、align_command、Watchdog FSM)
-│   ├── tuinadex_hand/           # 物理灵巧手运行时、统一 launch、Dynamixel 串口驱动
+│   ├── rebot_control/           # reBot B601-RS 机械臂底层电机与平滑算法控制 SDK
+│   ├── tuinadex_arm/            # 6-DOF 机械臂 ROS2 运行时、SocketCAN 驱动与看门狗
+│   ├── tuinadex_hand/           # 16-DOF 物理灵巧手运行时、Dynamixel 串口驱动
 │   ├── tuinadex_sim/            # MuJoCo 数字孪生包 (URDF/STL 资产、tuina_scene.xml、MujocoSimBridge)
+│   ├── tuinadex_bringup/        # 臂手协同整机统一启动 Launch 包 (robot.launch.py)
 │   ├── tuinadex_recorder/       # 进程内 rosbag2 示教采集节点
-│   └── tuinadex_teleop/         # MediaPipe 手势捕捉、单目跟踪与关节映射节点
-├── tests/                       # 全量测试套件 (47+ 单元测试覆盖核心驱动、仿真与集成回路)
+│   └── tuinadex_teleop/         # 统一多模态环境抽象 (BaseTuinaEnv/ROS2RobotEnv/MuJoCoEnv) 与遥操示教采集
+├── tests/                       # 全量测试套件 (80+ 纯逻辑单测 + 12 ROS 2 集成测试覆盖臂手双模)
 ├── scripts/                     # 自动化测试与辅助脚本 (e2e_sim_check.sh, e2e_mock_check.sh)
 ├── AGENTS.md                    # 项目专属规则层与硬件红线
 └── README.md                    # 本文档
