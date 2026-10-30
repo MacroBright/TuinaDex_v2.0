@@ -86,6 +86,8 @@ class ROS2RobotEnv(BaseTuinaEnv):
         # 缓存状态
         self._latest_hand_state = np.zeros(16, dtype=np.float32)
         self._latest_arm_state = np.zeros(6, dtype=np.float32)
+        self._latest_hand_effort = np.zeros(16, dtype=np.float32)
+        self._latest_arm_effort = np.zeros(6, dtype=np.float32)
         self._latest_images: dict[str, np.ndarray] = {}
         self._latest_timestamp = time.time()
 
@@ -128,9 +130,12 @@ class ROS2RobotEnv(BaseTuinaEnv):
     def _on_hand_state(self, msg: JointState) -> None:
         """手部 16-DOF 状态回调."""
         pos = np.array(msg.position, dtype=np.float32)
+        eff = np.asarray(msg.effort, dtype=np.float32)
         if pos.shape[0] >= 16:
             with self._lock:
                 self._latest_hand_state = pos[:16]
+                if eff.shape[0] >= 16:
+                    self._latest_hand_effort = eff[:16].copy()
                 if msg.header.stamp.sec > 0 or msg.header.stamp.nanosec > 0:
                     self._latest_timestamp = (
                         msg.header.stamp.sec + msg.header.stamp.nanosec * 1e-9
@@ -141,9 +146,12 @@ class ROS2RobotEnv(BaseTuinaEnv):
     def _on_arm_state(self, msg: JointState) -> None:
         """机械臂 6-DOF 状态回调."""
         pos = np.array(msg.position, dtype=np.float32)
+        eff = np.asarray(msg.effort, dtype=np.float32)
         if pos.shape[0] >= 6:
             with self._lock:
                 self._latest_arm_state = pos[:6]
+                if eff.shape[0] >= 6:
+                    self._latest_arm_effort = eff[:6].copy()
 
     def _on_image(self, cam_name: str, msg: Image) -> None:
         """摄像头图像回调 (解析为 RGB uint8)."""
@@ -180,9 +188,14 @@ class ROS2RobotEnv(BaseTuinaEnv):
 
             images = {k: v.copy() for k, v in self._latest_images.items()}
             timestamp = self._latest_timestamp
+            effort = np.concatenate(
+                [self._latest_arm_effort, self._latest_hand_effort]
+            ).astype(np.float32)
 
         return {
             "state": state,
+            "effort": effort,
+            "contact_forces": np.zeros(4, dtype=np.float32),
             "images": images,
             "timestamp": timestamp,
         }
