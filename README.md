@@ -172,17 +172,34 @@ ros2 launch tuinadex_teleop teleop.launch.py
   ```
   *验证指标: 仿真环境、双目相机 (head, wrist) 视频流分块编码、50Hz 关节状态对齐、生成原生 LeRobotDataset v3.0 目录 (MP4 + Parquet)。*
 
+- **三机位 Web Hub 采集与 H.264 导出自检**:
+  ```bash
+  bash scripts/e2e_hub_collection_check.sh
+  ```
+  *验证指标: 真实 EGL 三路渲染、22D Mock 遥操、REST/SSE/MJPEG Hub、异步保存、三路 H.264 与 LeRobot v3.0 Parquet 产物。*
+
 ### 4.4 多模态数据采集快速上手 (Data Collection Quickstart)
 ```bash
 # 激活具身基座环境
-source scripts/activate_tuinadex.sh vla
+source scripts/activate_tuinadex.sh control
 
-# 1. 运行仿真环境数据采集 (自适应 16D 手部或 22D 臂手，双目相机)
-python scripts/collect_teleop_data.py --env sim --mode hand_only --cameras head,wrist --repo-id data/tuina_demo
+# 1. 启动三机位 Web 采集 Hub（默认仅绑定 127.0.0.1）
+python scripts/collect_teleop_data.py --env sim --mode arm_hand --mock-teleop \
+  --hub --headless --port 8080 --repo-id data/hub_run
 
-# 2. 一键切换至真机数据采集 (上层录制与 LeRobot 代码零改动)
-python scripts/collect_teleop_data.py --env real --mode hand_only --cameras head,wrist --repo-id data/tuina_real_demo
+# 2. 运行 16D 手部终端采集
+python scripts/collect_teleop_data.py --env sim --mode hand_only \
+  --cameras head,wrist --repo-id data/tuina_demo
+
+# 3. 一键切换至真机数据采集 (上层录制与 LeRobot 代码零改动)
+python scripts/collect_teleop_data.py --env real --mode hand_only \
+  --cameras head,wrist --repo-id data/tuina_real_demo
 ```
+
+Hub 启动后 stdout 输出 `HUB_READY port=<n>`。浏览器打开
+`http://127.0.0.1:<n>` 即可查看 `overhead / wrist / side` 三路画面、
+22D 关节与 4 指接触力遥测，并通过 REST 命令完成
+`start / pause / resume / stop / save / discard / label` 操作。
 
 ### 4.5 运行多矩阵单元测试
 ```bash
@@ -219,7 +236,7 @@ TuinaDex_v2.0/
 │   ├── tuinadex_sim/            # MuJoCo 数字孪生包 (URDF/STL 资产、tuina_scene.xml、MujocoSimBridge)
 │   ├── tuinadex_bringup/        # 臂手协同整机统一启动 Launch 包 (robot.launch.py)
 │   ├── tuinadex_recorder/       # 进程内 rosbag2 示教采集节点
-│   └── tuinadex_teleop/         # 统一多模态环境抽象 (BaseTuinaEnv/ROS2RobotEnv/MuJoCoEnv) 与遥操示教采集
+│   └── tuinadex_teleop/         # 统一多模态环境、三机位采集、Web Hub 与遥操示教
 ├── tests/                       # 全量测试套件 (80+ 纯逻辑单测 + 12 ROS 2 集成测试覆盖臂手双模)
 ├── scripts/                     # 自动化测试与辅助脚本 (e2e_sim_check.sh, e2e_mock_check.sh)
 ├── AGENTS.md                    # 项目专属规则层与硬件红线

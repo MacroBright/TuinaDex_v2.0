@@ -185,7 +185,10 @@ class DataHubController:
         buffer = self.collector.buffer
         if save and len(buffer) > 0:
             issues = buffer.validate_continuity(
-                max_gap_s=1.5 / self.control_fps
+                max_gap_s=max(
+                    1.5 / self.control_fps,
+                    self.max_staleness_s,
+                )
             )
             if issues:
                 logger.warning(

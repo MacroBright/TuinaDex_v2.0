@@ -91,7 +91,13 @@ TuinaDex 是面向中医推拿/按摩场景构建的具身智能机器人系统�
 - 宿主机控制、仿真与遥操单测 (tuinadex-control)：
   `~/win_office/conda/envs/tuinadex-control/bin/python -m pytest tests/ -v`
 - ROS2 集成测试（宿主机 Lyrical Desktop）：
-  `source /opt/ros/lyrical/setup.bash && source install/setup.bash && python3 -m pytest tests/test_leap_hand_node_integration.py tests/test_arm_node_integration.py tests/test_sim_node_integration.py tests/test_tuinadex_bringup_launch.py tests/test_arm_hand_unified_control.py tests/test_recorder_node.py tests/test_ros2_robot_env.py -v`
+  `source /opt/ros/lyrical/setup.bash && source install/setup.bash && python3 -m pytest tests/test_leap_hand_node_integration.py tests/test_arm_node_integration.py tests/test_sim_node_integration.py tests/test_tuinadex_bringup_launch.py tests/test_arm_hand_unified_control.py tests/test_recorder_node.py tests/test_ros2_robot_env.py tests/test_teleop_sim_composite_node.py -v`
+- 遥操与仿真算法单测 (tuinadex-control, 81 项全量)：
+  `~/win_office/conda/envs/tuinadex-control/bin/python -m pytest tests/teleop/ -v`
+- 22 维复合仿真遥操节点 ROS2 启动入口：
+  `ros2 launch tuinadex_teleop teleop_sim.launch.py use_sim:=true mock:=false`
+- 22 维复合仿真遥操独立预览交互（带 OpenCV HUD & MuJoCo 3D 窗口）：
+  `python scripts/run_sim_teleop.py` (加 `--mock --no-gui` 支持离线 CI)
 - LeRobot 适配器与学习测试 (tuinadex-vla)：
   `~/win_office/conda/envs/tuinadex-vla/bin/python -m pytest tests/test_dataset_adapter.py tests/test_lerobot_v3_exporter.py -v`
 - 构建（8 包全量）：
@@ -110,6 +116,10 @@ TuinaDex 是面向中医推拿/按摩场景构建的具身智能机器人系统�
   `~/win_office/conda/envs/tuinadex-vla/bin/python -m pytest tests/test_lerobot_v3_exporter.py -v`
 - 多模态数据采集与 LeRobot v3.0 端到端闭环 E2E：
   `bash scripts/e2e_collection_check.sh`
+- 三机位采集 Hub 端到端 E2E（真实 EGL 渲染 + H.264 导出）：
+  `bash scripts/e2e_hub_collection_check.sh`
+- 三机位相机与采集契约单测：
+  `~/win_office/conda/envs/tuinadex-control/bin/python -m pytest tests/test_camera_rig.py tests/test_episode_buffer.py tests/test_data_channel.py tests/test_data_hub_controller.py tests/test_collection_hub_api.py -v`
 - 数据采集运行入口：
   `python scripts/collect_teleop_data.py --env sim|real --mode hand_only|arm_hand --cameras head,wrist`
 
@@ -142,17 +152,42 @@ TuinaDex 是面向中医推拿/按摩场景构建的具身智能机器人系统�
    - **Antigravity** (Seat 1: Recon & Review · 看得广): 负责全局架构分析、MuJoCo 仿真与环境建模、长程知识图谱沉淀 (`~/.agent-memory/knowledge-graph.jsonl`)、端到端全链路终验。
    - **Claude Code** (Seat 2: Lead & Arch · 想得深): 负责需求纵深拆解、Invariants 质量与硬件安全裁决、并发状态机死锁检测、签发 `implementation_plan.md`。
    - **Codex** (Seat 3: Coder · 改得准): 负责高密度代码落地、TDD 单元测试套件开发、协议编解码与驱动实现。
+   - **协作拓扑双模态 (Topology Modes)**:
+     - **Hierarchical (分层流水线, 默认)**: Phase 1~4 全链路严谨递进，适合大型重构、系统级演进与跨模块交付；
+     - **Pair/Mesh (结对双工攻坚)**: 面向算法边界突破与高并发死锁，Claude Code (Navigator 领航员 · 把关 Invariants 与逻辑) 与 Codex (Driver 操作手 · 极速 TDD) 点对点双工直连互审，免去全套文档流转，直达终验。
 2. **对抗性验证门禁体系 (Adversarial Verification Tier)**:
    - **Critic (代码规范审查员)**: 审查 PEP 8 / Google 规范、接口契约与代码内聚度。
    - **Challenger (对抗性压力测试员)**: 在 `agents/challenger.md` 定义，针对系统边界构造极端输入、最差复杂度、丢帧与超时故障，跑红用例方为及格。
    - **Auditor (真实性审计员)**: 在 `agents/auditor.md` 定义，审查终端命令输出，彻底拦截空断言、测试打桩 (Anti-Mock) 与跳过测试 (`skip`)。
    - **Success Auditor (终验守门员)**: 跨模块全量构建与 E2E 双模回环验证全绿放行。
-3. **排他性文件领空原则 (Exclusive File Ownership)**:
-   - 子任务原子认领必须绑定独占文件：`- [LOCKED: Codex] [FILES: src/.../leap_driver.py] <任务描述>`。
-   - 同一时刻一个文件严禁被两个 Agent 同时修改，杜绝 Git 冲突与脏写。
-4. **长程反思与经验升华 (Reflect)**:
-   - 排查出隐蔽缺陷或死锁后，强制以标准 Schema 升华写入黑板 Section 4 与长程图谱：`{触发场景 (Trigger) → 踩坑诱因 (Gotcha) → 升华法则 (Crystallized Invariant)}`。
+3. **排他性文件领空原则与租约看门狗 (Exclusive File Ownership & Lease Locks)**:
+   - 子任务原子认领必须绑定独占文件与时间戳租约：`- [LOCKED: Codex @ HH:MM (TTL: 30m)] [FILES: src/.../leap_driver.py] <任务描述>`；
+   - 同一时刻一个文件严禁被两个 Agent 同时修改，杜绝 Git 冲突与脏写；
+   - 超期未刷新租约（超过 TTL 或默认 2 小时无更新）视为死锁陈旧锁，接班 Agent 或人类可强制标记 `[RELEASED]` 接管释放。
+4. **长程记忆分治与认知反思闭环 (Memory Namespaces & Reflect)**:
+   - `invariants` (永久固化): 架构与硬件核心约束、通信协议，永久沉淀至 `~/.agent-memory/knowledge-graph.jsonl`；
+   - `patterns` (经验升华): 踩坑反思法则（`{Trigger → Gotcha → Crystallized Invariant}`），有预算召回（$\le 800$ tokens）；
+   - `collaboration` (协作备忘): 黑板中的阶段任务状态与跨 Agent 方案草案；
+   - `ephemeral` (暂态握手): 跨 Agent 临时握手信号与中间缓存，赋予 TTL（单轮任务结束后自动清理，绝不污染长期图谱）。
 5. **PreCompact 抗失忆钩子与现场快照**:
-   - 联动 Claude Code 的 `PreCompact` 钩子（工具 `collab-precompact`），在长会话压缩前夕将分支、脏文件与快照自动持久化写入黑板。
+   - 联动 Claude Code 的 `PreCompact` 钩子（工具 `collab-precompact`），在长会话压缩前夕将分支、脏文件与快照自动持久化写入黑板；
+   - 通过 `collab-tmux` 一键分配后台工位分屏，支持现场快照与状态恢复。
+6. **项目就绪度自检 (`agentctl audit`)**:
+   - 支持通过 `agentctl audit .` 快速审计项目规则规范、黑板状态机、任务死锁锁态与防爆安全带，输出 0~100 综合就绪度评分。
+
+---
+
+## 8. 命令输出防爆安全带 (Output Explosion Safeguards)
+为防止全量测试或构建的长日志淹没上下文或触发截断，所有命令执行严格遵守防爆安全带与管道截断规则：
+- **测试与验证输出截断**:
+  - 全量 pytest 执行必须使用管道截断或关键行过滤：
+    `pytest tests/ -v | head -n 30` 或 `pytest tests/ -v | grep -E "FAIL|ERROR|Summary|passed"`
+  - 宿主机构建命令长输出截断：
+    `colcon build --symlink-install | tail -n 30`
+- **Shell 脚本严谨性**:
+  - 所有 Bash 脚本顶部强制声明 `set -euo pipefail`，防止管道静默故障；
+  - 变量强制包裹双引号 `"$VAR"`，函数局部变量必须显式声明为 `local`。
+- **计算下沉与代码化思考 (Think in Code)**:
+  - 严禁使用原生读取工具硬灌数十万字节长日志或原始数据；优先编写本地微脚本（Python/Bash）过滤后将提炼统计传回上下文。
 
 

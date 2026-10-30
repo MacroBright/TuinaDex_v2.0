@@ -1,8 +1,11 @@
 """Hub controller tests for command queue, stale frames, and async saves."""
 import time
 
+import numpy as np
+
 from tuinadex_teleop.collection.collector import CollectionState, TuinaCollector
 from tuinadex_teleop.collection.data_channel import MockDataChannel
+from tuinadex_teleop.collection.episode_buffer import EpisodeBuffer
 from tuinadex_teleop.collection.data_hub_controller import (
     DataHubController,
     HubAction,
@@ -90,5 +93,29 @@ def test_submit_rejects_unknown_action():
     channel, collector, ctrl = _make()
     try:
         assert ctrl.submit("explode")["ok"] is False
+    finally:
+        ctrl.shutdown()
+
+
+def test_continuity_allows_gap_within_staleness_window():
+    channel, collector, ctrl = _make(max_staleness_s=0.06)
+    saved = []
+    ctrl.on_save = lambda episode: saved.append(len(episode))
+    try:
+        collector.buffer = EpisodeBuffer(episode_index=0)
+        for timestamp in (0.0, 0.031, 0.062):
+            collector.buffer.add_frame(
+                state=np.zeros(22, dtype=np.float32),
+                action=np.zeros(22, dtype=np.float32),
+                images={},
+                timestamp=timestamp,
+            )
+        collector.state = CollectionState.REVIEWING
+        ctrl._finish_episode(save=True)
+
+        deadline = time.monotonic() + 1.0
+        while ctrl.status()["state"] != "IDLE" and time.monotonic() < deadline:
+            time.sleep(0.01)
+        assert saved == [3]
     finally:
         ctrl.shutdown()
