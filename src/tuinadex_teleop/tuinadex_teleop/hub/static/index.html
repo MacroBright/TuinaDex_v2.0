@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <meta name="color-scheme" content="dark"/>
+  <title>TuinaDex 数据采集 Hub</title>
+  <link rel="icon" href="data:,"/>
+  <link rel="stylesheet" href="/style.css"/>
+</head>
+<body>
+  <header class="topbar">
+    <div class="identity">
+      <p class="kicker">TUINADEX / ARM + HAND</p>
+      <h1>数据采集 Hub</h1>
+    </div>
+    <div class="run-state" aria-live="polite">
+      <span id="state" class="state-pill" data-state="IDLE">IDLE</span>
+      <span id="stats" class="stats">等待遥测</span>
+    </div>
+  </header>
+
+  <main>
+    <section class="camera-grid" aria-label="三机位实时画面">
+      <figure>
+        <img id="v-overhead" src="/video/overhead" alt="全局俯视相机画面"/>
+        <figcaption><span>OVERHEAD</span><strong>全局俯视 · 60°</strong></figcaption>
+      </figure>
+      <figure>
+        <img id="v-wrist" src="/video/wrist" alt="腕部第一视角画面"/>
+        <figcaption><span>WRIST</span><strong>腕部第一视角 · 75°</strong></figcaption>
+      </figure>
+      <figure>
+        <img id="v-side" src="/video/side" alt="侧向水平相机画面"/>
+        <figcaption><span>SIDE</span><strong>侧向水平 · 45°</strong></figcaption>
+      </figure>
+    </section>
+
+    <section class="workbench" aria-label="采集控制与遥测">
+      <div class="telemetry-column">
+        <section class="panel" aria-labelledby="joints-title">
+          <div class="panel-heading">
+            <h2 id="joints-title">22 维关节位置</h2>
+            <span>rad</span>
+          </div>
+          <div id="joints" class="bars" role="list"></div>
+        </section>
+
+        <section class="panel" aria-labelledby="forces-title">
+          <div class="panel-heading">
+            <h2 id="forces-title">指尖法向力</h2>
+            <span>N</span>
+          </div>
+          <div id="forces" class="bars force-bars" role="list"></div>
+        </section>
+      </div>
+
+      <aside class="control-column">
+        <section class="panel" aria-labelledby="labels-title">
+          <div class="panel-heading">
+            <h2 id="labels-title">任务标注</h2>
+            <span id="label-summary">idle</span>
+          </div>
+          <div class="field-stack">
+            <label for="instruction">语言指令</label>
+            <input id="instruction" autocomplete="off" placeholder="按压大椎穴"/>
+            <label for="phase">阶段</label>
+            <input id="phase" autocomplete="off" placeholder="press"/>
+            <button type="button" data-act="label">写入标签</button>
+          </div>
+        </section>
+
+        <section class="panel" aria-labelledby="controls-title">
+          <div class="panel-heading">
+            <h2 id="controls-title">采集控制</h2>
+            <span id="episode">EP —</span>
+          </div>
+          <div class="controls">
+            <button type="button" data-act="start" title="开始 (Space)">开始</button>
+            <button type="button" data-act="pause" title="暂停 (P)">暂停</button>
+            <button type="button" data-act="resume" title="恢复 (R)">恢复</button>
+            <button type="button" data-act="stop" title="停止 (T)">停止</button>
+            <button type="button" data-act="save" title="保存 (S)">保存</button>
+            <button type="button" data-act="discard" title="丢弃 (D)">丢弃</button>
+          </div>
+          <p id="notice" class="notice" role="status" aria-live="polite"></p>
+        </section>
+      </aside>
+    </section>
+  </main>
+
+  <script src="/app.js"></script>
+</body>
+</html>
