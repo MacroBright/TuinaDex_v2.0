@@ -15,19 +15,19 @@ class RobotConfig:
     
     Attributes:
         mode: "hand_only" (16D) 或 "arm_hand" (22D = 6 臂 + 16 手).
-        camera_names: 需要采集/渲染的摄像头视角列表 (默认 ("head",)).
+        camera_names: 需要采集/渲染的摄像头视角列表 (默认 ("overhead", "wrist", "side")).
         fps: 采集控制与离线对齐目标频率 (Hz, 默认 50.0).
         physics_dt: 物理仿真步长 (默认 0.002s = 500Hz).
     """
     mode: str = "hand_only"
-    camera_names: tuple[str, ...] = ("head",)
+    camera_names: tuple[str, ...] = ("overhead", "wrist", "side")
     fps: float = 50.0
     physics_dt: float = 0.002
 
     def __init__(
         self,
         mode: str = "hand_only",
-        camera_names: Sequence[str] = ("head",),
+        camera_names: Sequence[str] = ("overhead", "wrist", "side"),
         fps: float = 50.0,
         physics_dt: float = 0.002,
     ):

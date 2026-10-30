@@ -1,0 +1,319 @@
+<mujoco model="tuina_sim_scene">
+  <compiler angle="radian" meshdir="../meshes" autolimits="true"/>
+
+  <option timestep="0.002" gravity="0 0 -9.81" integrator="implicitfast"/>
+
+  <default>
+    <!-- Global dynamic defaults -->
+    <joint limited="true" damping="0.5" armature="0.01"/>
+    <position kp="35.0" kv="1.5"/>
+    <geom friction="1.2 0.01 0.001" solref="0.004 1" solimp="0.95 0.99 0.001"/>
+
+    <!-- LEAP Hand specific joint dynamic defaults (low inertia fingers) -->
+    <default class="leap_hand">
+      <joint damping="0.03" armature="0.001"/>
+    </default>
+  </default>
+
+  <visual>
+    <headlight ambient="0.2 0.2 0.2" diffuse="0.3 0.3 0.3" specular="0.05 0.05 0.05"/>
+    <rgba haze="0.15 0.25 0.35 1.0"/>
+    <global azimuth="135" elevation="-25"/>
+  </visual>
+
+  <asset>
+    <!-- Visual Textures and Materials -->
+    <texture type="skybox" builtin="gradient" rgb1="0.30 0.50 0.70" rgb2="0.05 0.08 0.12" width="512" height="3072"/>
+    <texture type="2d" name="ground_tex" builtin="checker" mark="edge" rgb1="0.20 0.26 0.30" rgb2="0.12 0.16 0.20" markrgb="0.75 0.80 0.82" width="300" height="300"/>
+    <material name="ground_mat" texture="ground_tex" texuniform="true" texrepeat="6 6" reflectance="0.08"/>
+    <material name="bed_frame_mat" rgba="0.24 0.25 0.28 1.0" specular="0.3"/>
+    <material name="bed_mattress_mat" rgba="0.18 0.42 0.70 1.0" specular="0.2"/>
+    <material name="stand_mat" rgba="0.15 0.16 0.18 1.0" specular="0.4"/>
+    <material name="dummy_skin_mat" rgba="0.88 0.75 0.63 1.0" specular="0.1"/>
+
+    <!-- Patient Torso Mesh (Decimated <200k faces for MuJoCo STL limits, adult 1.5x scale) -->
+    <mesh name="male_torso" file="visual/male_torso.stl" scale="0.0036 0.0036 0.0036"/>
+
+    <!-- Shared Robot Finish Palette -->
+    <material name="rs_base_black" rgba="0.055 0.065 0.060 1"/>
+    <material name="rs_motor_black" rgba="0.045 0.052 0.049 1"/>
+    <material name="rs_anodized_silver" rgba="0.720 0.760 0.730 1"/>
+    <material name="rs_seeed_green" rgba="0.725 0.835 0.118 1"/>
+    <material name="leap_palm" rgba="0.604 0.149 0.149 1"/>
+    <material name="leap_joint" rgba="0.867 0.867 0.051 1"/>
+    <material name="leap_link" rgba="0.749 0.749 0.749 1"/>
+    <material name="leap_tip" rgba="0.867 0.867 0.051 1"/>
+
+    <!-- Arm RS Meshes -->
+    <mesh name="base_link" file="shared/base_link.STL"/>
+    <mesh name="link1" file="shared/link1.STL"/>
+    <mesh name="link2" file="shared/link2.STL"/>
+    <mesh name="link3" file="shared/link3.STL"/>
+    <mesh name="link4" file="shared/link4.STL"/>
+    <mesh name="link5" file="shared/link5.STL"/>
+    <mesh name="link6" file="shared/link6.STL"/>
+
+    <!-- LEAP Hand Meshes -->
+    <mesh name="palm_lower" file="leap_hand/palm_lower.stl"/>
+    <mesh name="mcp_joint" file="leap_hand/mcp_joint.stl"/>
+    <mesh name="pip" file="leap_hand/pip.stl"/>
+    <mesh name="dip" file="leap_hand/dip.stl"/>
+    <mesh name="fingertip" file="leap_hand/fingertip.stl"/>
+    <mesh name="thumb_pip" file="leap_hand/thumb_pip.stl"/>
+    <mesh name="thumb_dip" file="leap_hand/thumb_dip.stl"/>
+    <mesh name="thumb_fingertip" file="leap_hand/thumb_fingertip.stl"/>
+  </asset>
+
+  <worldbody>
+    <!-- Lighting (Reduced 50% brightness) -->
+    <light pos="0.2 0 2.5" dir="0 0 -1" diffuse="0.4 0.4 0.4"/>
+    <light pos="1.5 -1.2 2.2" dir="-0.5 0.4 -0.8" diffuse="0.25 0.25 0.25"/>
+
+    <!-- Cameras -->
+    <camera name="overview" pos="1.10 -1.15 1.55" xyaxes="0.707 0.707 0 -0.408 0.408 0.816" fovy="48"/>
+    <camera name="side_view" pos="0.20 -1.35 1.10" xyaxes="1 0 0 0 0.342 0.940" fovy="52"/>
+    <camera name="realsense_sim_cam" pos="0.20 -0.85 1.30" xyaxes="1 0 0 0 0.643 0.766" fovy="55"/>
+    <camera name="overhead_cam" pos="0.20 -0.85 1.45" xyaxes="1 0 0 0 0.766 0.643" fovy="60"/>
+    <camera name="side_cam" pos="0.20 -1.35 0.78" xyaxes="1 0 0 0 0 1" fovy="45"/>
+
+    <!-- Ground Floor -->
+    <geom name="floor" size="3 3 0.05" type="plane" material="ground_mat"/>
+
+    <!-- ==================================================================== -->
+    <!-- Tuina Massage Bed & Patient Dummy                                     -->
+    <!-- ==================================================================== -->
+    <body name="tuina_bed" pos="0 0 0">
+      <geom name="bed_frame" type="box" size="0.95 0.375 0.30" pos="0 0 0.30" material="bed_frame_mat"/>
+      <geom name="bed_mattress" type="box" size="0.95 0.375 0.04" pos="0 0 0.64" material="bed_mattress_mat"/>
+      
+      <!-- Patient Male Torso Model (Prone / 俯卧, Back Facing +Z towards sky/robot, 1.5x scale) -->
+      <body name="patient_dummy" pos="0.0331 0.4608 0.3676" quat="0.0 0.7071068 0.0 0.7071068">
+        <!-- Anatomical Male Torso Target for Tuina -->
+        <geom name="dummy_torso" type="mesh" mesh="male_torso" material="dummy_skin_mat"
+              solref="0.003 1" solimp="0.96 0.99 0.0005"/>
+      </body>
+    </body>
+
+    <!-- ==================================================================== -->
+    <!-- Composite Robot: reBot-DevArm (6-DOF) + LEAP Hand (16-DOF)            -->
+    <!-- Mounted on a heavy stand adjacent to the bed at (0.20, -0.55, 0.32)   -->
+    <!-- ==================================================================== -->
+    <body name="robot_stand" pos="0.20 -0.55 0.32">
+      <geom name="stand_pillar" type="box" size="0.12 0.12 0.32" material="stand_mat"/>
+      <geom name="stand_flange" type="cylinder" size="0.14 0.015" pos="0 0 0.32" material="stand_mat"/>
+
+      <!-- Robot Base mounted rotated +90 deg (facing towards bed center +Y) -->
+      <body name="base_link" pos="0 0 0.335" euler="0 0 1.5707963">
+        <geom type="mesh" material="rs_base_black" mesh="base_link"/>
+        
+        <!-- Link 1 -->
+        <body name="link1" pos="-0.00034283 -0.00098683 0.075">
+          <inertial pos="0.00817652 0.00122584 0.033142" quat="0.672066 0.672066 0.219836 -0.219836" mass="0.4655" diaginertia="0.000272817 0.000213413 0.00015464"/>
+          <joint name="joint1" pos="0 0 0" axis="0 0 -1" range="-2.8 2.8" actuatorfrcrange="-36 36"/>
+          <geom type="mesh" material="rs_anodized_silver" mesh="link1"/>
+          
+          <!-- Link 2 -->
+          <body name="link2" pos="0.020343 0.027237 0.07" quat="0.707105 -0.707108 0 0">
+            <inertial pos="-0.117865 -0.00342226 -0.0271552" quat="0.00176765 0.707354 0.00179466 0.706855" mass="1.552" diaginertia="0.0128139 0.0125599 0.000733734"/>
+            <joint name="joint2" pos="0 0 0" axis="0 0 1" range="0 3.14" actuatorfrcrange="-36 36"/>
+            <geom type="mesh" material="rs_seeed_green" mesh="link2"/>
+            
+            <!-- Link 3 -->
+            <body name="link3" pos="-0.236 0 0">
+              <inertial pos="0.103427 -0.0664138 -0.0271069" quat="-0.00138181 0.704593 0.00278372 0.709605" mass="1.252" diaginertia="0.00648251 0.00632715 0.000467564"/>
+              <joint name="joint3" pos="0 0 0" axis="0 0 -1" range="0 3.14" actuatorfrcrange="-36 36"/>
+              <geom type="mesh" material="rs_seeed_green" mesh="link3"/>
+              
+              <!-- Link 4 -->
+              <body name="link4" pos="0.228 -0.072746 0.0045">
+                <inertial pos="0.0475545 -0.0441113 -0.0314112" quat="0.610598 0.610598 0.356609 0.356609" mass="0.46" diaginertia="0.000889199 0.00066742 0.000323241"/>
+                <joint name="joint4" pos="0 0 0" axis="0 0 -1" range="-1.57 1.57" actuatorfrcrange="-14 14"/>
+                <geom type="mesh" material="rs_anodized_silver" mesh="link4"/>
+                
+                <!-- Link 5 -->
+                <body name="link5" pos="0.087 -0.048 -0.03075" quat="0.707105 -0.707108 0 0">
+                  <inertial pos="0.0114401 4.79077e-06 0.0380487" quat="0.999776 -0.00287901 0.0209484 0.000445921" mass="0.201205" diaginertia="7.34598e-05 5.51539e-05 5.2956e-05"/>
+                  <joint name="joint5" pos="0 0 0" axis="0 0 -1" range="-1.57 1.57" actuatorfrcrange="-14 14"/>
+                  <geom type="mesh" material="rs_seeed_green" mesh="link5"/>
+                  
+                  <!-- Link 6 (Wrist Flange) -->
+                  <body name="link6" pos="0.0365 0 0.048" quat="0.707105 0 0.707108 0">
+                    <inertial pos="0 0 0.015" mass="0.15" diaginertia="0.0002 0.0002 0.0002"/>
+                    <joint name="joint6" pos="0 0 0" axis="0 0 -1" range="-3.14 3.14" actuatorfrcrange="-14 14"/>
+                    <geom type="mesh" material="rs_motor_black" mesh="link6"/>
+                    
+                    <!-- LEAP Hand Mounted on Link 6 Flange -->
+                    <body name="leap_hand_palm" pos="0.0586 -0.0371 0.0203" quat="0 1 0 0" childclass="leap_hand">
+                    <camera name="wrist_cam" pos="0 -0.03 0.04" xyaxes="1 0 0 0 0.7071 0.7071" fovy="75"/>
+                    <geom pos="-0.0200952 0.0257578 -0.0347224" quat="1 0 0 0" type="mesh" material="leap_palm" mesh="palm_lower"/>
+
+                      <!-- Index Finger (4 DOF) -->
+                      <body name="mcp_joint" pos="-0.00709525 0.0230578 -0.0187224" quat="0.5 0.5 0.5 -0.5">
+                        <inertial pos="0 0 0" quat="0.388585 0.626468 -0.324549 0.592628" mass="0.044" diaginertia="1.47756e-05 1.31982e-05 6.0802e-06"/>
+                        <joint name="index_mcp" range="-0.314 2.23" actuatorfrcrange="-0.95 0.95" axis="0 0 -1"/>
+                        <geom pos="0.0084069 0.00776624 0.0146574" quat="1 0 0 0" type="mesh" material="leap_joint" mesh="mcp_joint"/>
+                        <body name="pip" pos="-0.0122 0.0381 0.0145" quat="0.5 -0.5 -0.5 0.5">
+                          <inertial pos="0 0 0" quat="0.709913 0.704273 -0.000363156 0.00475427" mass="0.032" diaginertia="4.7981e-06 4.23406e-06 2.86184e-06"/>
+                          <joint name="index_yaw" range="-1.047 1.047" actuatorfrcrange="-0.95 0.95" axis="0 0 -1"/>
+                          <geom pos="0.00964336 0.0003 0.000784034" quat="0.5 -0.5 -0.5 -0.5" type="mesh" material="leap_link" mesh="pip"/>
+                          <body name="dip" pos="0.015 0.0143 -0.013" quat="0.5 0.5 -0.5 0.5">
+                            <inertial pos="0 0 0" quat="-0.252689 0.659216 0.238844 0.666735" mass="0.037" diaginertia="6.68256e-06 6.24841e-06 5.02002e-06"/>
+                            <joint name="index_pip" range="-0.506 1.885" actuatorfrcrange="-0.95 0.95" axis="0 0 -1"/>
+                            <geom pos="0.0211334 -0.00843212 0.00978509" quat="0 -1 0 0" type="mesh" material="leap_joint" mesh="dip"/>
+                            <body name="fingertip" pos="-4.08806e-09 -0.0361 0.0002">
+                              <inertial pos="0 0 0" quat="0.706755 0.706755 0.0223155 0.0223155" mass="0.016" diaginertia="3.37527e-06 2.863e-06 1.54873e-06"/>
+                              <joint name="index_dip" range="-0.366 2.042" actuatorfrcrange="-0.95 0.95" axis="0 0 -1"/>
+                              <geom pos="0.0132864 -0.00611424 0.0145" quat="0 1 0 0" type="mesh" material="leap_tip" mesh="fingertip"/>
+                            </body>
+                          </body>
+                        </body>
+                      </body>
+
+                      <!-- Middle Finger (4 DOF) -->
+                      <body name="mcp_joint_2" pos="-0.00709525 -0.0223922 -0.0187224" quat="0.5 0.5 0.5 -0.5">
+                        <inertial pos="0 0 0" quat="0.388585 0.626468 -0.324549 0.592628" mass="0.044" diaginertia="1.47756e-05 1.31982e-05 6.0802e-06"/>
+                        <joint name="middle_mcp" range="-0.314 2.23" actuatorfrcrange="-0.95 0.95" axis="0 0 -1"/>
+                        <geom pos="0.0084069 0.00776624 0.0146574" quat="1 0 0 0" type="mesh" material="leap_joint" mesh="mcp_joint"/>
+                        <body name="pip_2" pos="-0.0122 0.0381 0.0145" quat="0.5 -0.5 -0.5 0.5">
+                          <inertial pos="0 0 0" quat="0.709913 0.704273 -0.000363156 0.00475427" mass="0.032" diaginertia="4.7981e-06 4.23406e-06 2.86184e-06"/>
+                          <joint name="middle_yaw" range="-1.047 1.047" actuatorfrcrange="-0.95 0.95" axis="0 0 -1"/>
+                          <geom pos="0.00964336 0.0003 0.000784034" quat="0.5 -0.5 -0.5 -0.5" type="mesh" material="leap_link" mesh="pip"/>
+                          <body name="dip_2" pos="0.015 0.0143 -0.013" quat="0.5 0.5 -0.5 0.5">
+                            <inertial pos="0 0 0" quat="-0.252689 0.659216 0.238844 0.666735" mass="0.037" diaginertia="6.68256e-06 6.24841e-06 5.02002e-06"/>
+                            <joint name="middle_pip" range="-0.506 1.885" actuatorfrcrange="-0.95 0.95" axis="0 0 -1"/>
+                            <geom pos="0.0211334 -0.00843212 0.00978509" quat="0 -1 0 0" type="mesh" material="leap_joint" mesh="dip"/>
+                            <body name="fingertip_2" pos="0 -0.0361 0.0002">
+                              <inertial pos="0 0 0" quat="0.706755 0.706755 0.0223155 0.0223155" mass="0.016" diaginertia="3.37527e-06 2.863e-06 1.54873e-06"/>
+                              <joint name="middle_dip" range="-0.366 2.042" actuatorfrcrange="-0.95 0.95" axis="0 0 -1"/>
+                              <geom pos="0.0132864 -0.00611424 0.0145" quat="0 1 0 0" type="mesh" material="leap_tip" mesh="fingertip"/>
+                            </body>
+                          </body>
+                        </body>
+                      </body>
+
+                      <!-- Ring Finger (4 DOF) -->
+                      <body name="mcp_joint_3" pos="-0.00709525 -0.0678422 -0.0187224" quat="0.5 0.5 0.5 -0.5">
+                        <inertial pos="0 0 0" quat="0.388585 0.626468 -0.324549 0.592628" mass="0.044" diaginertia="1.47756e-05 1.31982e-05 6.0802e-06"/>
+                        <joint name="ring_mcp" range="-0.314 2.23" actuatorfrcrange="-0.95 0.95" axis="0 0 -1"/>
+                        <geom pos="0.0084069 0.00776624 0.0146574" quat="1 0 0 0" type="mesh" material="leap_joint" mesh="mcp_joint"/>
+                        <body name="pip_3" pos="-0.0122 0.0381 0.0145" quat="0.5 -0.5 -0.5 0.5">
+                          <inertial pos="0 0 0" quat="0.709913 0.704273 -0.000363156 0.00475427" mass="0.032" diaginertia="4.7981e-06 4.23406e-06 2.86184e-06"/>
+                          <joint name="ring_yaw" range="-1.047 1.047" actuatorfrcrange="-0.95 0.95" axis="0 0 -1"/>
+                          <geom pos="0.00964336 0.0003 0.000784034" quat="0.5 -0.5 -0.5 -0.5" type="mesh" material="leap_link" mesh="pip"/>
+                          <body name="dip_3" pos="0.015 0.0143 -0.013" quat="0.5 0.5 -0.5 0.5">
+                            <inertial pos="0 0 0" quat="-0.252689 0.659216 0.238844 0.666735" mass="0.037" diaginertia="6.68256e-06 6.24841e-06 5.02002e-06"/>
+                            <joint name="ring_pip" range="-0.506 1.885" actuatorfrcrange="-0.95 0.95" axis="0 0 -1"/>
+                            <geom pos="0.0211334 -0.00843212 0.00978509" quat="0 -1 0 0" type="mesh" material="leap_joint" mesh="dip"/>
+                            <body name="fingertip_3" pos="0 -0.0361 0.0002">
+                              <inertial pos="0 0 0" quat="0.706755 0.706755 0.0223155 0.0223155" mass="0.016" diaginertia="3.37527e-06 2.863e-06 1.54873e-06"/>
+                              <joint name="ring_dip" range="-0.366 2.042" actuatorfrcrange="-0.95 0.95" axis="0 0 -1"/>
+                              <geom pos="0.0132864 -0.00611424 0.0145" quat="0 1 0 0" type="mesh" material="leap_tip" mesh="fingertip"/>
+                            </body>
+                          </body>
+                        </body>
+                      </body>
+
+                      <!-- Thumb (4 DOF) -->
+                      <body name="pip_4" pos="-0.0693952 -0.00124224 -0.0216224" quat="0.707107 0 0.707107 0">
+                        <inertial pos="0 0 0" quat="0.709913 0.704273 -0.000363156 0.00475427" mass="0.032" diaginertia="4.7981e-06 4.23406e-06 2.86184e-06"/>
+                        <joint name="thumb_yaw" range="-0.349 2.094" actuatorfrcrange="-0.95 0.95" axis="0 0 -1"/>
+                        <geom pos="-0.00535664 0.0003 0.000784034" quat="0.5 -0.5 -0.5 -0.5" type="mesh" material="leap_link" mesh="pip"/>
+                        <body name="thumb_pip" pos="0 0.0143 -0.013" quat="0.5 0.5 -0.5 0.5">
+                          <inertial pos="0 0 0" mass="0.003" diaginertia="5.93e-07 5.49e-07 2.24e-07"/>
+                          <joint name="thumb_cmc" range="-0.47 2.443" actuatorfrcrange="-0.95 0.95" axis="0 0 -1"/>
+                          <geom pos="0.0119619 0 -0.0158526" quat="0.707107 0.707107 0 0" type="mesh" material="leap_joint" mesh="thumb_pip"/>
+                          <body name="thumb_dip" pos="0 0.0145 -0.017" quat="0.707107 -0.707107 0 0">
+                            <inertial pos="0 0 0" quat="0.708624 0.704906 0.00637342 0.0303153" mass="0.038" diaginertia="8.48742e-06 7.67823e-06 3.82835e-06"/>
+                            <joint name="thumb_mcp" range="-1.2 1.9" actuatorfrcrange="-0.95 0.95" axis="0 0 -1"/>
+                            <geom pos="0.0439687 0.057953 -0.00862868" quat="1 0 0 0" type="mesh" material="leap_joint" mesh="thumb_dip"/>
+                            <body name="thumb_fingertip" pos="0 0.0466 0.0002" quat="0 0 0 1">
+                              <inertial pos="0 0 0" quat="0.704307 0.709299 0.006848 -0.0282727" mass="0.049" diaginertia="2.03882e-05 1.98443e-05 4.32049e-06"/>
+                              <joint name="thumb_ip" range="-1.34 1.88" actuatorfrcrange="-0.95 0.95" axis="0 0 -1"/>
+                              <geom pos="0.0625595 0.0784597 0.0489929" quat="1 0 0 0" type="mesh" material="leap_tip" mesh="thumb_fingertip"/>
+                            </body>
+                          </body>
+                        </body>
+                      </body>
+                    </body>
+                  </body>
+                </body>
+              </body>
+            </body>
+          </body>
+        </body>
+      </body>
+    </body>
+  </worldbody>
+
+  <!-- Contacts: Self-collision exclusions -->
+  <contact>
+    <exclude body1="base_link" body2="link1"/>
+    <exclude body1="link1" body2="link2"/>
+    <exclude body1="link2" body2="link3"/>
+    <exclude body1="link3" body2="link4"/>
+    <exclude body1="link4" body2="link5"/>
+    <exclude body1="link5" body2="link6"/>
+    <exclude body1="link6" body2="leap_hand_palm"/>
+    <exclude body1="link6" body2="mcp_joint"/>
+    <exclude body1="link6" body2="mcp_joint_2"/>
+    <exclude body1="link6" body2="mcp_joint_3"/>
+    <exclude body1="link5" body2="mcp_joint_2"/>
+    <exclude body1="link4" body2="mcp_joint_2"/>
+    <exclude body1="leap_hand_palm" body2="mcp_joint"/>
+    <exclude body1="leap_hand_palm" body2="mcp_joint_2"/>
+    <exclude body1="leap_hand_palm" body2="mcp_joint_3"/>
+    <exclude body1="leap_hand_palm" body2="pip_4"/>
+    <exclude body1="leap_hand_palm" body2="thumb_pip"/>
+    <exclude body1="leap_hand_palm" body2="thumb_dip"/>
+
+    <exclude body1="mcp_joint" body2="dip"/>
+    <exclude body1="mcp_joint_2" body2="dip_2"/>
+    <exclude body1="mcp_joint_3" body2="dip_3"/>
+    <exclude body1="mcp_joint" body2="fingertip"/>
+    <exclude body1="mcp_joint_2" body2="fingertip_2"/>
+    <exclude body1="mcp_joint_3" body2="fingertip_3"/>
+    <exclude body1="pip" body2="fingertip"/>
+    <exclude body1="pip_2" body2="fingertip_2"/>
+    <exclude body1="pip_3" body2="fingertip_3"/>
+    <exclude body1="pip_4" body2="thumb_dip"/>
+    <exclude body1="pip_4" body2="thumb_fingertip"/>
+    <exclude body1="thumb_pip" body2="thumb_fingertip"/>
+    <exclude body1="link3" body2="link5"/>
+  </contact>
+
+  <!-- Actuators: 6 RS Motors (Arm) + 16 LEAP Dynamixel Servos (Hand) -->
+  <actuator>
+    <!-- 6-DOF reBot-DevArm Actuators -->
+    <position name="act_joint1" joint="joint1" kp="250.0" kv="15.0" ctrlrange="-2.8 2.8"/>
+    <position name="act_joint2" joint="joint2" kp="300.0" kv="18.0" ctrlrange="0 3.14"/>
+    <position name="act_joint3" joint="joint3" kp="250.0" kv="15.0" ctrlrange="0 3.14"/>
+    <position name="act_joint4" joint="joint4" kp="50.0" kv="5.0" ctrlrange="-1.57 1.57"/>
+    <position name="act_joint5" joint="joint5" kp="40.0" kv="4.0" ctrlrange="-1.57 1.57"/>
+    <position name="act_joint6" joint="joint6" kp="25.0" kv="3.0" ctrlrange="-3.14 3.14"/>
+
+    <!-- 16-DOF LEAP Hand Actuators (Snappy, stiff tracking) -->
+    <!-- Index (4) -->
+    <position name="act_index_yaw" joint="index_yaw" kp="80.0" kv="1.8" ctrlrange="-0.35 0.35"/>
+    <position name="act_index_mcp" joint="index_mcp" kp="95.0" kv="2.0" ctrlrange="-0.314 2.23"/>
+    <position name="act_index_pip" joint="index_pip" kp="85.0" kv="1.8" ctrlrange="-0.506 1.885"/>
+    <position name="act_index_dip" joint="index_dip" kp="85.0" kv="1.5" ctrlrange="-0.366 2.042"/>
+
+    <!-- Middle (4) -->
+    <position name="act_middle_yaw" joint="middle_yaw" kp="80.0" kv="1.8" ctrlrange="-0.35 0.35"/>
+    <position name="act_middle_mcp" joint="middle_mcp" kp="95.0" kv="2.0" ctrlrange="-0.314 2.23"/>
+    <position name="act_middle_pip" joint="middle_pip" kp="85.0" kv="1.8" ctrlrange="-0.506 1.885"/>
+    <position name="act_middle_dip" joint="middle_dip" kp="85.0" kv="1.5" ctrlrange="-0.366 2.042"/>
+
+    <!-- Ring (4) -->
+    <position name="act_ring_yaw" joint="ring_yaw" kp="80.0" kv="1.8" ctrlrange="-0.35 0.35"/>
+    <position name="act_ring_mcp" joint="ring_mcp" kp="95.0" kv="2.0" ctrlrange="-0.314 2.23"/>
+    <position name="act_ring_pip" joint="ring_pip" kp="85.0" kv="1.8" ctrlrange="-0.506 1.885"/>
+    <position name="act_ring_dip" joint="ring_dip" kp="85.0" kv="1.5" ctrlrange="-0.366 2.042"/>
+
+    <!-- Thumb (4) -->
+    <position name="act_thumb_yaw" joint="thumb_yaw" kp="90.0" kv="2.0" ctrlrange="-0.349 2.094"/>
+    <position name="act_thumb_cmc" joint="thumb_cmc" kp="95.0" kv="2.2" ctrlrange="-0.47 2.443"/>
+    <position name="act_thumb_mcp" joint="thumb_mcp" kp="95.0" kv="2.2" ctrlrange="-1.2 1.9"/>
+    <position name="act_thumb_ip" joint="thumb_ip" kp="90.0" kv="2.0" ctrlrange="-1.34 1.88"/>
+  </actuator>
+</mujoco>
