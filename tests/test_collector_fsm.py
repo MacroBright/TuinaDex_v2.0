@@ -94,3 +94,21 @@ def test_collector_fsm_discard():
     collector.review_decision(save=False)
     assert collector.state == CollectionState.IDLE
     assert len(collector.buffer) == 0
+
+
+def test_review_save_transfers_ownership_and_defers_idle():
+    cfg = RobotConfig(mode="hand_only", camera_names=["head"])
+    collector = TuinaCollector(MockEnv(cfg))
+    collector.start_recording()
+    for _ in range(4):
+        collector.step_once(np.zeros(16, dtype=np.float32))
+    collector.stop_recording()
+
+    captured = []
+    collector.on_save = captured.append
+    assert collector.review_decision(save=True, defer_completion=True) is True
+    assert collector.state == CollectionState.SAVING
+    assert len(captured) == 1 and len(captured[0]) == 4
+    assert len(collector.buffer) == 0
+    collector.notify_save_complete()
+    assert collector.state == CollectionState.IDLE

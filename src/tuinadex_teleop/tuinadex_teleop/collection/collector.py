@@ -18,6 +18,7 @@ class CollectionState(Enum):
     RECORDING = auto()   # 正在示教录制中
     PAUSED = auto()      # 示教中断暂停
     REVIEWING = auto()   # 单个试次完成，等待评审确认 (Save / Discard / Restart)
+    SAVING = auto()      # 后台落盘中，禁止开始新试次
 
 
 class TuinaCollector:
@@ -28,13 +29,14 @@ class TuinaCollector:
 
     def __init__(
         self,
-        env: BaseTuinaEnv,
+        env: BaseTuinaEnv | None = None,
         on_save: Optional[Callable[[EpisodeBuffer], None]] = None,
     ):
         self.env = env
         self.buffer = EpisodeBuffer()
         self.state = CollectionState.IDLE
         self.on_save = on_save
+        self._next_episode_index = 1
 
         self.total_episodes_saved = 0
         self.total_episodes_discarded = 0
@@ -46,6 +48,8 @@ class TuinaCollector:
             logger.info("Collector entered RECORDING state.")
         elif self.state == CollectionState.REVIEWING:
             logger.warning("Cannot start recording while in REVIEWING state. Please confirm or discard first.")
+        elif self.state == CollectionState.SAVING:
+            logger.warning("Cannot start recording while an episode is being saved.")
 
     def pause_recording(self) -> None:
         """暂停当前录制."""
@@ -61,35 +65,65 @@ class TuinaCollector:
 
     def restart_episode(self) -> None:
         """放弃当前未完试次并立即重新开始录制."""
-        self.buffer.clear()
+        self.buffer = EpisodeBuffer(
+            episode_index=self._next_episode_index,
+            language_instruction=self.buffer.language_instruction,
+        )
+        self._next_episode_index += 1
         self.state = CollectionState.RECORDING
         logger.info("Collector restarted current episode.")
 
-    def review_decision(self, save: bool) -> bool:
-        """评审当前试次: save=True 保存, save=False 丢弃."""
+    def review_decision(
+        self, save: bool, *, defer_completion: bool = False
+    ) -> bool:
+        """Review an episode and transfer buffer ownership before saving."""
         if self.state != CollectionState.REVIEWING:
             logger.warning(f"review_decision called while in state {self.state}, expected REVIEWING.")
             return False
 
-        if save:
-            if len(self.buffer) > 0:
-                if self.on_save is not None:
-                    self.on_save(self.buffer)
-                self.total_episodes_saved += 1
-                logger.info(f"Episode approved and saved ({len(self.buffer)} frames). Total saved: {self.total_episodes_saved}")
-            self.buffer.clear()
-            self.state = CollectionState.IDLE
+        episode = self.buffer
+        self.buffer = EpisodeBuffer(
+            episode_index=self._next_episode_index,
+            language_instruction=episode.language_instruction,
+        )
+        self._next_episode_index += 1
+
+        if save and len(episode) > 0:
+            self.state = (
+                CollectionState.SAVING
+                if defer_completion
+                else CollectionState.IDLE
+            )
+            self.total_episodes_saved += 1
+            if self.on_save is not None:
+                self.on_save(episode)
+            logger.info(
+                "Episode approved and transferred "
+                f"({len(episode)} frames). Total saved: "
+                f"{self.total_episodes_saved}"
+            )
             return True
-        else:
-            dropped_frames = len(self.buffer)
-            self.buffer.clear()
-            self.total_episodes_discarded += 1
+
+        dropped_frames = len(episode)
+        self.total_episodes_discarded += 1
+        self.state = CollectionState.IDLE
+        logger.info(
+            f"Episode discarded ({dropped_frames} frames). Total discarded: "
+            f"{self.total_episodes_discarded}"
+        )
+        return False
+
+    def notify_save_complete(self) -> None:
+        """Return to IDLE after the background writer releases ownership."""
+        if self.state == CollectionState.SAVING:
             self.state = CollectionState.IDLE
-            logger.info(f"Episode discarded ({dropped_frames} frames). Total discarded: {self.total_episodes_discarded}")
-            return False
 
     def step_once(self, action: np.ndarray) -> tuple[dict[str, Any], dict[str, Any]]:
         """单步执行动作，若处于 RECORDING 状态则自动记入缓存."""
+        if self.env is None:
+            raise RuntimeError(
+                "TuinaCollector has no env; use DataHubController.tick() instead."
+            )
         obs, info = self.env.step(action)
 
         if self.state == CollectionState.RECORDING:
@@ -98,6 +132,9 @@ class TuinaCollector:
                 action=action,
                 images=obs.get("images", {}),
                 timestamp=obs.get("timestamp", 0.0),
+                effort=obs.get("effort"),
+                contact_forces=obs.get("contact_forces"),
+                phase_label=obs.get("phase_label", ""),
             )
 
         return obs, info
