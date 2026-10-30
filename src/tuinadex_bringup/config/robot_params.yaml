@@ -24,3 +24,4 @@ sim:
   physics_substeps: 10
   use_scene_world: true
   gui: false
+

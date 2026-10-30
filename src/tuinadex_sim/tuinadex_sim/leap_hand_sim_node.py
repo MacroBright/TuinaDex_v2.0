@@ -18,8 +18,8 @@ except ImportError:
     Node = object
     JointState = None
 
-from tuinadex_core.command_processing import align_command
-from tuinadex_core.names import CANONICAL_JOINT_NAMES
+from tuinadex_core.command_processing import align_command, align_arm_command
+from tuinadex_core.names import CANONICAL_JOINT_NAMES, CANONICAL_ARM_JOINT_NAMES
 from .sim_bridge import MujocoSimBridge
 from .sim_core import SimulationCore
 
@@ -54,6 +54,9 @@ class LeapHandSimNode(Node):
         declare("physics_substeps", 10)
         declare("command_topic", "/hand/joint_command")
         declare("state_topic", "/hand/joint_states")
+        declare("arm_command_topic", "/arm/joint_command")
+        declare("arm_state_topic", "/arm/joint_states")
+        declare("publish_arm_states", False)
         declare("gui", False)
 
         self.rate_hz = float(gp("publish_rate_hz"))
@@ -109,6 +112,37 @@ class LeapHandSimNode(Node):
             self._on_joint_command,
             10,
         )
+
+        # 6-DOF 机械臂接口 (当 MuJoCo 模型包含机械臂时按参数协调)
+        # 默认模式 (publish_arm_states=False): 由 ArmNode 独占发布 /arm/joint_states，
+        # LeapHandSimNode 仅订阅同步至 MuJoCo 动力学模型，彻底消除双发话题调度竞争。
+        # 独立运行模式 (publish_arm_states=True): 允许无 ArmNode 时由 LeapHandSimNode 独占接管。
+        self.arm_state_pub = None
+        self.arm_cmd_sub = None
+        self.arm_sync_sub = None
+        self.publish_arm_states = bool(gp("publish_arm_states"))
+
+        if getattr(bridge, "has_arm", False):
+            if self.publish_arm_states:
+                self.arm_state_pub = self.create_publisher(
+                    JointState, str(gp("arm_state_topic")), 10
+                )
+                self.arm_cmd_sub = self.create_subscription(
+                    JointState,
+                    str(gp("arm_command_topic")),
+                    self._on_arm_joint_command,
+                    10,
+                )
+                self.get_logger().info("检测到 6-DOF 机械臂模型，LeapHandSimNode 已启用独占机械臂发布与控制话题。")
+            else:
+                self.arm_sync_sub = self.create_subscription(
+                    JointState,
+                    str(gp("arm_state_topic")),
+                    self._on_arm_joint_state_sync,
+                    10,
+                )
+                self.get_logger().info("检测到 6-DOF 机械臂模型，已启用跟随同步订阅模式 (话题竞争防护生效，由 ArmNode 主导发布)。")
+
         self.timer = self.create_timer(1.0 / self.rate_hz, self._control_loop)
         self.get_logger().info(
             f"LeapHandSimNode ready: rate={self.rate_hz:.1f}Hz, "
@@ -123,10 +157,25 @@ class LeapHandSimNode(Node):
         names = list(msg.name) if msg.name else None
         q_target, reason = align_command(msg.position, names)
         if q_target is None:
-            self.get_logger().warning(f"指令被拒绝 ({reason})，已丢弃。")
+            self.get_logger().warning(f"灵巧手指令被拒绝 ({reason})，已丢弃。")
             return
         # 此处已校验/clamp 过；core.apply_command 按契约幂等复检一次，保证 core 独立可测。
         self.simulation_core.apply_command(q_target, t_now=self._now())
+
+    def _on_arm_joint_command(self, msg: JointState) -> None:
+        names = list(msg.name) if msg.name else None
+        q_target, reason = align_arm_command(msg.position, names)
+        if q_target is None:
+            self.get_logger().warning(f"机械臂指令被拒绝 ({reason})，已丢弃。")
+            return
+        if hasattr(self.simulation_core.bridge, "set_arm_targets"):
+            self.simulation_core.bridge.set_arm_targets(q_target)
+
+    def _on_arm_joint_state_sync(self, msg: JointState) -> None:
+        names = list(msg.name) if msg.name else None
+        q_pos, reason = align_arm_command(msg.position, names)
+        if q_pos is not None and hasattr(self.simulation_core.bridge, "set_arm_targets"):
+            self.simulation_core.bridge.set_arm_targets(q_pos)
 
     def _control_loop(self) -> None:
         state = self.simulation_core.tick(self._now())
@@ -139,6 +188,18 @@ class LeapHandSimNode(Node):
         state_msg.velocity = state.velocities.tolist()
         state_msg.effort = state.efforts.tolist()
         self.state_pub.publish(state_msg)
+
+        # 发布 6-DOF 机械臂状态
+        if self.arm_state_pub is not None and hasattr(self.simulation_core.bridge, "get_arm_state"):
+            arm_state = self.simulation_core.bridge.get_arm_state()
+            if arm_state is not None:
+                arm_msg = JointState()
+                arm_msg.header.stamp = state_msg.header.stamp
+                arm_msg.name = list(CANONICAL_ARM_JOINT_NAMES)
+                arm_msg.position = arm_state.positions.tolist()
+                arm_msg.velocity = arm_state.velocities.tolist()
+                arm_msg.effort = arm_state.efforts.tolist()
+                self.arm_state_pub.publish(arm_msg)
 
     def destroy_node(self) -> bool:
         if getattr(self, "viewer", None) is not None:

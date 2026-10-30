@@ -7,6 +7,8 @@ leap_hand_sim_node:
     # 通信话题契约 (与真机 100% 相同)
     command_topic: "/hand/joint_command"
     state_topic: "/hand/joint_states"
+    arm_command_topic: "/arm/joint_command"
+    arm_state_topic: "/arm/joint_states"
     
     # 安全与看门狗
     watchdog_timeout_sec: 0.3         # 300ms 无指令回退至 Relax-to-OPEN

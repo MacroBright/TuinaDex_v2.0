@@ -1,0 +1,84 @@
+hand:
+  handedness: Right
+  is_valid: true
+  measured_palm_length_m: 0.0765
+  palm_reference_length_m: 0.085
+  q_zero_offset:
+  - 0.0452
+  - 1.1563
+  - 1.0755
+  - 0.5764
+  - 0.3612
+  - 0.9435
+  - 0.8247
+  - 0.6803
+  - 0.5063
+  - 0.8502
+  - 0.5486
+  - 0.6822
+  - 0.0424
+  - 0.4506
+  - 0.6599
+  - 1.1135
+  scale_ratio: 1.111
+imu:
+  device_port: /dev/myimu
+  imu_axis_mapping: +x,+y,+z
+  is_valid: true
+  mounting: IMU strapped on dorsal wrist, Y along forearm towards fingers, X across
+    wrist, Z pointing outward from wrist dorsal side
+  neutral_quat_wxyz:
+  - 0.18119729033580317
+  - -0.054758774334973684
+  - 0.05064566903228931
+  - 0.980614111063351
+  neutral_rpy_deg:
+  - 4.6
+  - 7.22
+  - 159.35
+metadata:
+  calibrated_at: '2026-10-29 11:14:01'
+  device: reBot-DevArm + LEAP Hand Right
+  version: '1.0'
+table:
+  axis_mapping: -y,+x,+z
+  baseline_distance_m: 0.4325061609486063
+  is_valid: true
+  marker_size_m: 0.08
+  num_samples: 25
+  primary_id: 0
+  secondary_id: 1
+  t_cam_to_table:
+  - - 0.9872323179755054
+    - -0.157355455003087
+    - 0.024730772844418106
+    - -0.08877580167929844
+  - - -0.13546445857465783
+    - -0.9110803095926607
+    - -0.38933539517441373
+    - -0.12300715739442648
+  - - 0.08379576843603476
+    - 0.3810143438944439
+    - -0.9207639974167656
+    - 0.5631527192766839
+  - - 0.0
+    - 0.0
+    - 0.0
+    - 1.0
+  t_table_to_cam:
+  - - 0.9872323179755053
+    - -0.13546445857465778
+    - 0.08379576843603473
+    - 0.02378942763611159
+  - - -0.15735545500308692
+    - -0.9110803095926601
+    - 0.38101434389444366
+    - -0.3406080195551145
+  - - 0.024730772844418113
+    - -0.3893353951744135
+    - -0.9207639974167651
+    - 0.4728352029092923
+  - - 0.0
+    - 0.0
+    - 0.0
+    - 1.0

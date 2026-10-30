@@ -1,0 +1,84 @@
+# ==============================================================================
+# TuinaDex Teleoperation Subproject Configuration (Stage 1 & Stage 2)
+# ==============================================================================
+
+camera:
+  model: "D455"
+  fps: 30
+  width: 640
+  height: 480
+  # Filter patch radius for depth sampling around hand keypoints (in pixels)
+  depth_patch_radius: 3
+  # RealSense stream alignment: align depth to color
+  align_depth: true
+
+aruco:
+  dictionary: "DICT_4X4_50"
+  marker_size_m: 0.080  # 80mm side length
+  marker_ids: [0, 1]    # Dual diagonal layout
+  primary_id: 0         # Primary origin marker
+  secondary_id: 1       # Secondary diagonal marker
+  min_calibration_samples: 30
+  calibration_file: "configs/table_calibration.yaml"
+
+filter:
+  position_one_euro:
+    min_cutoff: 1.0
+    beta: 0.05
+    d_cutoff: 1.0
+  hand_one_euro:
+    min_cutoff: 1.0
+    beta: 0.05
+    d_cutoff: 1.0
+    max_joint_velocity_rad_s: 8.0
+  hand_confidence_threshold: 0.70
+  hand_ema_alpha: 0.85
+
+clutch:
+  scale: 1.0  # Teleoperation workspace scale (human movement to robot movement)
+  axis_mapping: "-y,+x,+z"  # Align desk/hand plane to robot base frame (XY inverted, Z upward)
+  workspace:
+    x_min: -0.40
+    x_max: 0.40
+    y_min: 0.15
+    y_max: 0.70
+    z_min: 0.02
+    z_max: 0.45
+  default_state: "DISENGAGED"
+
+robot:
+  arm:
+    model: "b601-rs"
+    can_interface: "can0"
+    can_bitrate: 1000000
+    control_rate_hz: 200.0
+    mit_gains:
+      kp: [40.0, 65.0, 65.0, 30.0, 35.0, 30.0]
+      kd: [2.0, 5.0, 5.0, 1.0, 3.0, 1.0]
+      z_compliance_kp: 15.0
+
+  hand:
+    serial_port: "/dev/tuinadex_hand"
+    baudrate: 4000000
+    current_limit_ma: 150.0
+    watchdog_timeout_ms: 300.0
+
+# Multi-tier Teleoperation Safety Guardrails
+safety:
+  enabled: true                 # Default safety status (can be toggled via [S] key or --no-safety)
+  hand_loss_timeout_s: 0.80     # Max duration of hand loss before homing (s, raised from 0.35s)
+  max_latency_s: 0.25           # Max tracking latency threshold (s, raised from 0.12s)
+  max_pos_jump_m: 0.18          # Max Cartesian translation jump per frame (m, raised from 0.08m)
+  max_rot_jump_deg: 60.0        # Max orientation angular jump per frame (deg, raised from 35.0 deg)
+  max_hand_q_jump_rad: 1.50     # Max dexterous finger joint jump (rad, raised from 0.80 rad)
+  min_singular_value: 0.010     # Min Jacobian singular value for singularity detection (relaxed from 0.025)
+  min_manipulability: 0.0005    # Min Yoshikawa manipulability index (relaxed from 0.0015)
+  joint_limit_margin_rad: 0.02  # Joint soft limit buffer margin (~1.15 deg, relaxed from 0.05 rad)
+  max_total_force_n: 120.0      # Tuina total contact force safety ceiling (N, raised from 70.0N)
+  max_finger_force_n: 70.0      # Tuina single finger contact force limit (N, raised from 40.0N)
+  max_force_rate_n_s: 400.0     # Contact force surge rate ceiling (N/s, raised from 100.0N/s)
+  min_force_rate_trigger_n: 10.0 # Only check surge rate if total force > 10N
+  lift_off_height_m: 0.06       # Safe vertical lift-off distance before homing (m)
+  lift_off_duration_s: 0.6      # Duration of vertical lift-off stage (s)
+  retract_duration_s: 1.8       # Duration of smooth homing trajectory (s)
+

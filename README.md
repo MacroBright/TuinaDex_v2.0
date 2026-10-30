@@ -12,6 +12,18 @@ TuinaDex 是面向中医推拿/理疗场景构建的具身智能机器人系统�
 
 ---
 
+## 🤝 协作规范与开发指南 (For Humans & AI Agents)
+
+本项目全面推行**测试驱动开发 (TDD)** 与**分层架构防破坏准则**。
+无论是人类开发者还是 AI 编码助手（Claude Code, Cursor, Codex, Windsurf, Copilot, Antigravity），在新增模块、修改代码或发起 Pull Request 前，**必须阅读并严格遵守 [`AGENTS.md`](AGENTS.md)**：
+
+- **核心不变量**：SI 弧度制（0 rad 全开基准）、22 维绝对关节位置动作空间（禁止增量 delta）、300ms 安全看门狗平滑阻尼回退；
+- **五层架构契约**：Layer 1 硬件/物理孪生 $\rightarrow$ Layer 2 驱动/仿真桥 $\rightarrow$ Layer 3 安全控制内核 $\rightarrow$ Layer 4 ROS2 中间件/Hub $\rightarrow$ Layer 5 VLA 策略（严禁跨层调用，严格单一事实源 SSOT）；
+- **环境准入门禁**：使用 `source scripts/activate_tuinadex.sh [control|vla]` 局部切换环境，依赖变更必须跑通 `bash scripts/verify_all_envs.sh`；
+- **团队协作工作流**：遵循 GitHub Flow 分支管理、Conventional Commits 提交规范以及本地四重门禁验证（环境、构建、单测、E2E）。
+
+---
+
 ## 1. 系统架构与数据流图 (Architecture & Dataflow)
 
 ```mermaid
@@ -220,14 +232,13 @@ python3 -m pytest tests/test_leap_hand_node_integration.py tests/test_recorder_n
 
 ```text
 TuinaDex_v2.0/
-├── .agent/                      # 多 Agent 协作接力黑板与状态 (SESSION_STATE.md)
 ├── docs/
 │   ├── specs/                   # 冻结的 16-DOF 接口与通信规范
-│   ├── adrs/                    # 架构决策记录 (ADR 0001: MVP, ADR 0002: Simulation)
+│   ├── adrs/                    # 架构决策记录 (ADR 0001, ADR 0002, ADR 0003)
 │   ├── architecture/            # 交互式架构全景图 (tuinadex_sim_digital_twin.html)
-│   └── superpowers/plans/       # Phase 3 实施规划与审查记录
+│   └── superpowers/plans/       # 各阶段实施规划与裁决记录
 ├── dataset/                     # 离线数据处理与 LeRobot 适配器包 (tuinadex_dataset)
-│   └── tuinadex_dataset/        # bag_reader, synchronizer, validator, adapter, cli
+│   └── tuinadex_dataset/        # bag_reader, synchronizer, validator, lerobot_exporter, cli
 ├── src/                         # ROS2 源码空间 (8 个模块化功能包)
 │   ├── tuinadex_core/           # 共享纯逻辑包 (规范关节名、逐关节限位、align_command、Watchdog FSM)
 │   ├── rebot_control/           # reBot B601-RS 机械臂底层电机与平滑算法控制 SDK
@@ -237,9 +248,9 @@ TuinaDex_v2.0/
 │   ├── tuinadex_bringup/        # 臂手协同整机统一启动 Launch 包 (robot.launch.py)
 │   ├── tuinadex_recorder/       # 进程内 rosbag2 示教采集节点
 │   └── tuinadex_teleop/         # 统一多模态环境、三机位采集、Web Hub 与遥操示教
-├── tests/                       # 全量测试套件 (80+ 纯逻辑单测 + 12 ROS 2 集成测试覆盖臂手双模)
-├── scripts/                     # 自动化测试与辅助脚本 (e2e_sim_check.sh, e2e_mock_check.sh)
-├── AGENTS.md                    # 项目专属规则层与硬件红线
+├── tests/                       # 全量测试套件 (81 项遥操单测 + 30 项 Hub 单测 + 13 项 ROS2 集成单测 + VLA 导出)
+├── scripts/                     # 自动化测试与辅助脚本 (verify_all_envs.sh, e2e_*.sh)
+├── AGENTS.md                    # 项目顶层架构宪章、分层规范与 Agent 协作守则
 └── README.md                    # 本文档
 ```
 
@@ -248,3 +259,4 @@ TuinaDex_v2.0/
 ## 6. 核心架构决策记录 (Architecture Decision Records)
 - [ADR 0001: LEAP Hand MVP 核心架构决策记录](docs/adrs/0001-architecture-decisions-mvp.md) (状态机选型、rosbag2 采集器、双域解耦、双重限位护栏)
 - [ADR 0002: MuJoCo 仿真数字孪生与真机统一切换架构决策记录](docs/adrs/0002-architecture-decisions-sim.md) (tuinadex_core 下沉、单线程 50Hz/500Hz 步进、Hold+Ramp 回退保真、统一启动切换)
+- [ADR 0003: 手-臂协同三机位数据采集 Web Hub 与 LeRobot v3.0 流式链路决策记录](docs/adrs/0003-data-collection-hub-and-lerobot-pipeline.md) (标准三机位拓扑、独立 EGL 渲染解耦、JPEG 内存缓存、Parquet 元数据与 H.264 MP4 视频流式导出)

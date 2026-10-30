@@ -172,3 +172,38 @@ def test_gui_parameter_defaults_false_and_handles_fake_bridge(ros_context):
         assert node.viewer is None
     finally:
         node.destroy_node()
+
+
+def test_arm_dual_publish_competition_prevention(ros_context):
+    """验证机械臂双发话题竞争防护: 默认 publish_arm_states=False 时不与 ArmNode 冲突."""
+    class FakeArmBridge(FakeBridge):
+        def __init__(self):
+            super().__init__()
+            self.has_arm = True
+            self.arm_targets = np.zeros(6, dtype=np.float64)
+
+        def set_arm_targets(self, targets):
+            self.arm_targets = np.asarray(targets, dtype=np.float64).copy()
+
+    # 1. 默认配置: publish_arm_states=False，防止与 ArmNode 双发冲突
+    default_node = LeapHandSimNode(
+        parameter_overrides={"gui": False, "publish_arm_states": False},
+        bridge=FakeArmBridge(),
+    )
+    try:
+        assert default_node.arm_state_pub is None, "默认不得创建 arm_state_pub，防止话题双发"
+        assert default_node.arm_sync_sub is not None, "应创建 arm_sync_sub 用于同步姿态"
+    finally:
+        default_node.destroy_node()
+
+    # 2. 独立运行配置: publish_arm_states=True，允许接管机械臂发布
+    standalone_node = LeapHandSimNode(
+        parameter_overrides={"gui": False, "publish_arm_states": True},
+        bridge=FakeArmBridge(),
+    )
+    try:
+        assert standalone_node.arm_state_pub is not None, "独立模式下应创建 arm_state_pub"
+        assert standalone_node.arm_cmd_sub is not None, "独立模式下应创建 arm_cmd_sub"
+    finally:
+        standalone_node.destroy_node()
+
