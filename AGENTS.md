@@ -158,7 +158,7 @@ TuinaDex 是面向中医推拿/理疗场景构建的高性能具身智能机器�
 
 ---
 
-## 6. 双基座环境管理规则与准入门禁 (Environment Management)
+## 6. 双基座环境管理与依赖变更门禁 (Environment Management)
 
 根据《多端异构环境管理架构设计规范》(`docs/specs/ENVIRONMENT_MANAGEMENT_SPEC.md`)，本项目采用双基座硬隔离方案：
 
