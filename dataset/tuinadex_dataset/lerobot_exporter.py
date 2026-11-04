@@ -43,6 +43,13 @@ class LeRobotDatasetWriter:
         if info_path.exists():
             return LeRobotDataset(self.output_root.name, root=self.output_root)
 
+        # LeRobotDatasetMetadata.create invokes root.mkdir(exist_ok=False).
+        # If output_root already exists without info.json (e.g. empty or only partial meta),
+        # clean it up so create() does not fail with FileExistsError.
+        if self.output_root.exists() and not info_path.exists():
+            import shutil
+            shutil.rmtree(self.output_root)
+
         dim = int(self.config.action_dim)
         joint_names = list(self.config.joint_names)
         features: dict[str, Any] = {
@@ -92,6 +99,14 @@ class LeRobotDatasetWriter:
             self.output_root,
             self.use_videos,
         )
+        if self.output_root.exists() and not info_path.exists():
+            import shutil
+            logger.warning(
+                "Cleaning pre-existing incomplete dataset directory %s to avoid LeRobot FileExistsError",
+                self.output_root,
+            )
+            shutil.rmtree(self.output_root)
+
         return LeRobotDataset.create(
             repo_id=self.output_root.name,
             fps=int(self.fps),
@@ -141,11 +156,74 @@ class LeRobotDatasetWriter:
             self._dataset.meta.latest_episode = None
         self._dataset.latest_episode = None
 
+    def _save_via_subprocess(self, buffer: Any, task: str) -> str:
+        """Fallback to export via Python 3.10 Conda environment when torch is missing."""
+        import os
+        import pickle
+        import subprocess
+        import tempfile
+
+        conda_py = Path.home() / "win_office/conda/envs/tuinadex-control/bin/python"
+        if not conda_py.exists():
+            conda_py = Path.home() / "win_office/conda/envs/tuinadex-vla/bin/python"
+        if not conda_py.exists():
+            raise RuntimeError(
+                "PyTorch / LeRobot not available in current Python and no conda environment found at "
+                f"{conda_py}."
+            )
+
+        with tempfile.NamedTemporaryFile(suffix=".pkl", delete=False) as f:
+            tmp_path = Path(f.name)
+            pickle.dump(buffer, f)
+
+        repo_root = Path(__file__).resolve().parents[2]
+        env = dict(os.environ)
+        extra_paths = [
+            str(repo_root / "dataset"),
+            str(repo_root / "src/tuinadex_core"),
+            str(repo_root / "src/tuinadex_teleop"),
+            str(repo_root / "src/tuinadex_sim"),
+        ]
+        current_pp = env.get("PYTHONPATH", "")
+        env["PYTHONPATH"] = ":".join(extra_paths) + (f":{current_pp}" if current_pp else "")
+
+        try:
+            cmd = [
+                str(conda_py),
+                "-m",
+                "tuinadex_dataset.lerobot_exporter",
+                "--pickle-path",
+                str(tmp_path),
+                "--repo-id",
+                str(self.output_root),
+                "--task",
+                str(task),
+                "--fps",
+                str(self.fps),
+                "--mode",
+                str(getattr(self.config, "mode", "arm_hand")),
+                "--cameras",
+                ",".join(self.config.camera_names),
+            ]
+            res = subprocess.run(cmd, env=env, cwd=str(repo_root), capture_output=True, text=True)
+            if res.returncode != 0:
+                raise RuntimeError(
+                    f"Subprocess LeRobot export failed: {res.stderr or res.stdout}"
+                )
+            logger.info("Subprocess LeRobot export succeeded: %s", res.stdout.strip())
+            return str(self.output_root)
+        finally:
+            if tmp_path.exists():
+                tmp_path.unlink()
+
     def save_episode(
         self, buffer: Any, task: str = "tuina_massage"
     ) -> str:
         """Write one episode while decoding only one image frame at a time."""
-        import torch
+        try:
+            import torch
+        except (ImportError, ModuleNotFoundError):
+            return self._save_via_subprocess(buffer, task)
 
         if len(buffer) == 0:
             raise ValueError("Cannot export empty EpisodeBuffer.")
@@ -204,3 +282,35 @@ class LeRobotDatasetWriter:
         """Flush phase metadata and remaining writer state."""
         self._write_phase_labels()
         self.flush()
+
+
+if __name__ == "__main__":
+    import argparse
+    import pickle
+    import sys
+
+    root_p = str(Path(__file__).resolve().parents[2])
+    for sub in ("src/tuinadex_core", "src/tuinadex_teleop", "src/tuinadex_sim", "dataset"):
+        p = f"{root_p}/{sub}"
+        if p not in sys.path:
+            sys.path.insert(0, p)
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--pickle-path", required=True)
+    parser.add_argument("--repo-id", required=True)
+    parser.add_argument("--task", default="tuina_massage")
+    parser.add_argument("--fps", type=float, default=50.0)
+    parser.add_argument("--mode", default="arm_hand")
+    parser.add_argument("--cameras", default="overhead,wrist,side")
+    cli_args = parser.parse_args()
+
+    from tuinadex_teleop.envs.config import RobotConfig
+
+    with open(cli_args.pickle_path, "rb") as pf:
+        loaded_buf = pickle.load(pf)
+
+    cams = [c.strip() for c in cli_args.cameras.split(",") if c.strip()]
+    cfg = RobotConfig(mode=cli_args.mode, camera_names=cams, fps=cli_args.fps)
+    w = LeRobotDatasetWriter(repo_id=cli_args.repo_id, config=cfg, fps=cli_args.fps)
+    w.save_episode(loaded_buf, task=cli_args.task)
+    print("SAVED_OK")

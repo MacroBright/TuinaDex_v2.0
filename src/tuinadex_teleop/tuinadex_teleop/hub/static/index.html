@@ -4,90 +4,237 @@
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
   <meta name="color-scheme" content="dark"/>
-  <title>TuinaDex 数据采集 Hub</title>
+  <title>TuinaDex 具身智能数据采集工作台 (22-DOF)</title>
   <link rel="icon" href="data:,"/>
   <link rel="stylesheet" href="/style.css"/>
 </head>
 <body>
+  <!-- 顶栏：系统标识与全局状态 -->
   <header class="topbar">
     <div class="identity">
-      <p class="kicker">TUINADEX / ARM + HAND</p>
-      <h1>数据采集 Hub</h1>
+      <p class="kicker">TUINADEX · 22-DOF EMBODIED WORKSTATION</p>
+      <h1>中医推拿多模态数据采集 Hub</h1>
     </div>
+
+    <!-- 任务语义与阶段快速设定 -->
+    <div class="task-bar">
+      <div class="input-pill">
+        <label for="instruction">指令</label>
+        <input id="instruction" autocomplete="off" placeholder="按揉大椎穴" value="按揉大椎穴"/>
+      </div>
+      <div class="input-pill">
+        <label for="phase">阶段</label>
+        <input id="phase" autocomplete="off" placeholder="knead" value="knead"/>
+      </div>
+      <button type="button" class="btn-sm" data-act="label" title="更新标签 (Enter)">更新标签</button>
+    </div>
+
+    <!-- 运行状态与配额监控 -->
     <div class="run-state" aria-live="polite">
+      <div class="quota-pill" title="今日采集进度">
+        <span class="quota-label">配额</span>
+        <strong id="quota-count">0</strong><span class="quota-total">/50</span>
+      </div>
       <span id="state" class="state-pill" data-state="IDLE">IDLE</span>
-      <span id="stats" class="stats">等待遥测</span>
+      <button type="button" id="btn-zen" class="btn-icon" title="切换全屏禅道模式 (F)">⛶ 全屏</button>
     </div>
   </header>
 
-  <main>
-    <section class="camera-grid" aria-label="三机位实时画面">
-      <figure>
-        <img id="v-overhead" src="/video/overhead" alt="全局俯视相机画面"/>
-        <figcaption><span>OVERHEAD</span><strong>全局俯视 · 60°</strong></figcaption>
-      </figure>
-      <figure>
-        <img id="v-wrist" src="/video/wrist" alt="腕部第一视角画面"/>
-        <figcaption><span>WRIST</span><strong>腕部第一视角 · 75°</strong></figcaption>
-      </figure>
-      <figure>
-        <img id="v-side" src="/video/side" alt="侧向水平相机画面"/>
-        <figcaption><span>SIDE</span><strong>侧向水平 · 45°</strong></figcaption>
-      </figure>
-    </section>
+  <main class="main-layout">
+    <!-- 左侧/中央：多相机视网膜区 (一大两小主副视窗) -->
+    <section class="viewport-section" aria-label="多相机视角矩阵">
+      <!-- 主视窗 (Primary Viewport) -->
+      <div class="primary-viewport" id="primary-viewport">
+        <img id="primary-img" src="/video/wrist" alt="主视角相机画面"/>
 
-    <section class="workbench" aria-label="采集控制与遥测">
-      <div class="telemetry-column">
-        <section class="panel" aria-labelledby="joints-title">
-          <div class="panel-heading">
-            <h2 id="joints-title">22 维关节位置</h2>
-            <span>rad</span>
+        <!-- OSD 悬浮透明平视层 (Heads-Up Display) -->
+        <div class="osd-layer">
+          <div class="osd-top-left">
+            <div class="osd-pill osd-task">
+              <span class="osd-dot"></span>
+              <span id="osd-instruction">按揉大椎穴</span>
+            </div>
+            <div class="osd-pill osd-phase" id="osd-phase-pill">
+              <span id="osd-phase">阶段: [3. 按揉 Knead]</span>
+            </div>
           </div>
-          <div id="joints" class="bars" role="list"></div>
-        </section>
 
-        <section class="panel" aria-labelledby="forces-title">
-          <div class="panel-heading">
-            <h2 id="forces-title">指尖法向力</h2>
-            <span>N</span>
+          <div class="osd-top-right">
+            <div class="osd-pill osd-rec" id="osd-rec-badge">
+              <span class="rec-dot"></span>
+              <span id="osd-timer">00:00.0</span>
+            </div>
+            <div class="osd-pill osd-fps" id="osd-fps-badge">
+              <span id="osd-fps">50.0 FPS</span>
+            </div>
           </div>
-          <div id="forces" class="bars force-bars" role="list"></div>
-        </section>
+
+          <div class="osd-bottom-left">
+            <div class="osd-force-gauge">
+              <span class="force-title">推拿接触总力</span>
+              <div class="force-reading">
+                <strong id="osd-total-force">0.0</strong><small>N</small>
+              </div>
+            </div>
+          </div>
+
+          <div class="osd-bottom-right">
+            <div class="osd-pill osd-view-tag" id="primary-view-tag" title="点击或按 Tab 切换主视角">
+              <span id="primary-view-name">WRIST 腕部第一视角</span>
+              <small class="tab-hint">[Tab 交换]</small>
+            </div>
+          </div>
+        </div>
       </div>
 
-      <aside class="control-column">
-        <section class="panel" aria-labelledby="labels-title">
-          <div class="panel-heading">
-            <h2 id="labels-title">任务标注</h2>
-            <span id="label-summary">idle</span>
-          </div>
-          <div class="field-stack">
-            <label for="instruction">语言指令</label>
-            <input id="instruction" autocomplete="off" placeholder="按压大椎穴"/>
-            <label for="phase">阶段</label>
-            <input id="phase" autocomplete="off" placeholder="press"/>
-            <button type="button" data-act="label">写入标签</button>
-          </div>
-        </section>
+      <!-- 副视窗缩略栏 (Secondary Strip) -->
+      <div class="secondary-strip" id="secondary-strip" aria-label="辅助机位缩略图">
+        <figure class="secondary-thumb" data-cam="overhead" title="点击设为主视角 (Tab)">
+          <img src="/video/overhead" alt="俯视全景画面"/>
+          <figcaption>
+            <span>OVERHEAD</span>
+            <strong>全局俯视 · 60°</strong>
+          </figcaption>
+          <div class="thumb-swap-overlay">设为主视角</div>
+        </figure>
 
-        <section class="panel" aria-labelledby="controls-title">
-          <div class="panel-heading">
-            <h2 id="controls-title">采集控制</h2>
-            <span id="episode">EP —</span>
-          </div>
-          <div class="controls">
-            <button type="button" data-act="start" title="开始 (Space)">开始</button>
-            <button type="button" data-act="pause" title="暂停 (P)">暂停</button>
-            <button type="button" data-act="resume" title="恢复 (R)">恢复</button>
-            <button type="button" data-act="stop" title="停止 (T)">停止</button>
-            <button type="button" data-act="save" title="保存 (S)">保存</button>
-            <button type="button" data-act="discard" title="丢弃 (D)">丢弃</button>
-          </div>
-          <p id="notice" class="notice" role="status" aria-live="polite"></p>
-        </section>
-      </aside>
+        <figure class="secondary-thumb" data-cam="side" title="点击设为主视角 (Tab)">
+          <img src="/video/side" alt="侧视深度画面"/>
+          <figcaption>
+            <span>SIDE</span>
+            <strong>侧向水平 · 45°</strong>
+          </figcaption>
+          <div class="thumb-swap-overlay">设为主视角</div>
+        </figure>
+      </div>
+
+      <!-- 快速阶段切换按键坞 -->
+      <div class="phase-selector-bar" role="toolbar" aria-label="手法阶段切换">
+        <span class="phase-title">手法阶段 (按数字键 1-4 标记):</span>
+        <button type="button" class="phase-btn" data-phase="approach" data-num="1"><kbd>1</kbd> 准备接近 (Approach)</button>
+        <button type="button" class="phase-btn" data-phase="press" data-num="2"><kbd>2</kbd> 定位下压 (Press)</button>
+        <button type="button" class="phase-btn active" data-phase="knead" data-num="3"><kbd>3</kbd> 循环推揉 (Knead)</button>
+        <button type="button" class="phase-btn" data-phase="retract" data-num="4"><kbd>4</kbd> 阻尼抬手 (Retract)</button>
+      </div>
     </section>
+
+    <!-- 右侧：遥测数据与试次历史抽屉 -->
+    <aside class="sidebar-section">
+      <!-- 采集操作控制面板 -->
+      <section class="panel control-panel" aria-labelledby="ctrl-title">
+        <div class="panel-heading">
+          <h2 id="ctrl-title">采集控制</h2>
+          <span id="episode">EP 00</span>
+        </div>
+        <div class="action-grid">
+          <button type="button" class="btn-action btn-start" data-act="start" title="开始录制 (Space)">
+            <span class="btn-icon-symbol">▶</span> 开始录制 <kbd>Space</kbd>
+          </button>
+          <button type="button" class="btn-action btn-stop" data-act="stop" title="停止录制 (Space)">
+            <span class="btn-icon-symbol">■</span> 停止 <kbd>Space</kbd>
+          </button>
+          <button type="button" class="btn-action btn-save" data-act="save" title="批准并保存试次 (S)">
+            <span class="btn-icon-symbol">✓</span> 保存试次 <kbd>S</kbd>
+          </button>
+          <button type="button" class="btn-action btn-discard" data-act="discard" title="舍弃当前试次 (D)">
+            <span class="btn-icon-symbol">✕</span> 丢弃 <kbd>D</kbd>
+          </button>
+          <button type="button" class="btn-action btn-home" data-act="home" title="一键回到初始姿态 (H)">
+            <span class="btn-icon-symbol">⟲</span> 回初始姿态 <kbd>H</kbd>
+          </button>
+        </div>
+        <p id="notice" class="notice-bar" role="status" aria-live="polite"></p>
+      </section>
+
+      <!-- 指尖受力气泡雷达 -->
+      <section class="panel force-radar-panel" aria-labelledby="radar-title">
+        <div class="panel-heading">
+          <h2 id="radar-title">指尖法向受力雷达</h2>
+          <span id="force-summary-badge">0.0 N</span>
+        </div>
+        <div class="finger-radar-grid" id="finger-radar">
+          <div class="finger-bubble" data-finger="thumb">
+            <div class="bubble-circle"><span class="force-val">0.0</span></div>
+            <span class="finger-name">拇指 Thb</span>
+          </div>
+          <div class="finger-bubble" data-finger="index">
+            <div class="bubble-circle"><span class="force-val">0.0</span></div>
+            <span class="finger-name">食指 Idx</span>
+          </div>
+          <div class="finger-bubble" data-finger="middle">
+            <div class="bubble-circle"><span class="force-val">0.0</span></div>
+            <span class="finger-name">中指 Mid</span>
+          </div>
+          <div class="finger-bubble" data-finger="ring">
+            <div class="bubble-circle"><span class="force-val">0.0</span></div>
+            <span class="finger-name">无名 Rng</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- 22 维生理学生理学分组网格 -->
+      <section class="panel telemetry-panel" aria-labelledby="telemetry-title">
+        <div class="panel-heading">
+          <h2 id="telemetry-title">22 维关节物理弧度 (rad)</h2>
+          <span class="legend-hint">中位 0 rad</span>
+        </div>
+        <div class="anatomical-container">
+          <!-- 机械臂 6-DOF -->
+          <div class="joint-group-card">
+            <h3>reBot 机械臂 (6-DOF)</h3>
+            <div class="joint-bars" id="arm-joints"></div>
+          </div>
+          <!-- 灵巧手 16-DOF -->
+          <div class="joint-group-card">
+            <h3>LEAP Hand 灵巧手 (16-DOF)</h3>
+            <div class="hand-fingers-grid">
+              <div class="finger-subcard">
+                <h4>拇指 (Thumb)</h4>
+                <div class="joint-bars" id="hand-thumb"></div>
+              </div>
+              <div class="finger-subcard">
+                <h4>食指 (Index)</h4>
+                <div class="joint-bars" id="hand-index"></div>
+              </div>
+              <div class="finger-subcard">
+                <h4>中指 (Middle)</h4>
+                <div class="joint-bars" id="hand-middle"></div>
+              </div>
+              <div class="finger-subcard">
+                <h4>无名指 (Ring)</h4>
+                <div class="joint-bars" id="hand-ring"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 试次历史抽屉画廊 (Episode Gallery) -->
+      <section class="panel episode-drawer-panel" aria-labelledby="gallery-title">
+        <div class="panel-heading">
+          <h2 id="gallery-title">当前会话试次画廊</h2>
+          <span id="session-summary">已存 0 条</span>
+        </div>
+        <div class="episode-list" id="episode-list" role="list">
+          <div class="empty-hint">暂无保存的试次记录，按 Space 开始录制</div>
+        </div>
+      </section>
+    </aside>
   </main>
+
+  <!-- 底部常驻快捷键功能坞 (Hotkey Ribbon) -->
+  <footer class="hotkey-dock" aria-label="快捷键提示坞">
+    <div class="dock-container">
+      <span class="dock-title">操作快捷坞:</span>
+      <div class="dock-pill"><kbd>Space</kbd> 录制 / 停止</div>
+      <div class="dock-pill"><kbd>S</kbd> 批准保存</div>
+      <div class="dock-pill"><kbd>D</kbd> 舍弃重来</div>
+      <div class="dock-pill"><kbd>Tab</kbd> 交换主副机位</div>
+      <div class="dock-pill"><kbd>1-4</kbd> 切换手法阶段</div>
+      <div class="dock-pill"><kbd>F</kbd> 全屏禅道模式</div>
+      <span class="dock-status" id="stats">就绪 · 等待开始</span>
+    </div>
+  </footer>
 
   <script src="/app.js"></script>
 </body>

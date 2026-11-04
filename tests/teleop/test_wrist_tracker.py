@@ -293,3 +293,41 @@ def test_draw_wrist_hud_execution(standard_intrinsics):
         assert out_img.shape == (480, 640, 3)
         assert out_img.dtype == np.uint8
 
+
+def test_wrist_tracker_handedness_consensus_lock(standard_intrinsics):
+    """Verify that temporal consensus lock filters out transient single-frame handedness inversions."""
+    tracker = WristTracker(default_handedness="Right")
+    dummy_color = np.zeros((480, 640, 3), dtype=np.uint8)
+    dummy_depth = np.ones((480, 640), dtype=np.float32) * 0.60
+
+    current_hand = "Right"
+
+    def mock_det(img):
+        lm = np.zeros((21, 3), dtype=np.float32)
+        lm[LM_WRIST] = [0.5, 0.5, 0.0]
+        lm[LM_MIDDLE_MCP] = [0.5, 0.4, 0.0]
+        lm[LM_INDEX_MCP] = [0.45, 0.42, 0.0]
+        lm[LM_PINKY_MCP] = [0.55, 0.42, 0.0]
+        return {"landmarks": lm, "handedness": current_hand, "score": 0.95}
+
+    tracker.set_custom_detector(mock_det)
+
+    # Frame 1: Tracking Right hand
+    pose = tracker.process_frame(dummy_color, dummy_depth, standard_intrinsics, timestamp=1.0)
+    assert pose.handedness == "Right"
+
+    # Frame 2: Transient glitch (MediaPipe misclassifies single frame as Left)
+    current_hand = "Left"
+    pose = tracker.process_frame(dummy_color, dummy_depth, standard_intrinsics, timestamp=1.016)
+    assert pose.handedness == "Right", "Transient Left glitch must not flip locked Right handedness"
+
+    # Feed 8 more frames of Left (total 9 frames) -> still locked as Right (< 10 threshold)
+    for i in range(8):
+        pose = tracker.process_frame(dummy_color, dummy_depth, standard_intrinsics, timestamp=1.033 + i * 0.016)
+        assert pose.handedness == "Right"
+
+    # 10th consecutive frame of Left -> consensus reached, switches to Left
+    pose = tracker.process_frame(dummy_color, dummy_depth, standard_intrinsics, timestamp=1.20)
+    assert pose.handedness == "Left", "10 consecutive high-confidence frames must switch handedness"
+
+

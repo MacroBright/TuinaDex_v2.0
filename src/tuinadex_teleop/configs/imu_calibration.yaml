@@ -4,11 +4,11 @@ imu_axis_mapping: +x,+y,+z
 mounting: IMU strapped on dorsal wrist, Y along forearm towards fingers, X across
   wrist, Z pointing outward from wrist dorsal side
 neutral_quat_wxyz:
-- 0.18119729033580317
-- -0.054758774334973684
-- 0.05064566903228931
-- 0.980614111063351
+- 0.9808753997676732
+- 0.014702981071946232
+- 0.11859009960506482
+- 0.15363482923434432
 neutral_rpy_deg:
-- 4.6
-- 7.22
-- 159.35
+- 3.84
+- 13.19
+- 18.25

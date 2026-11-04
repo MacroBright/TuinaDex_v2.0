@@ -40,8 +40,8 @@ except ImportError:
 from .base import BaseRobotAdapter
 
 
-# Default ready arm posture: elevated tuina ready stance hovering above adult torso
-DEFAULT_READY_ARM_Q = np.array([0.0, 0.85, 0.95, -0.80, 0.0, 0.0], dtype=np.float64)
+# Default ready arm posture: elevated tuina ready stance with parallel palm hovering above bed (Palm Z=0.981m)
+DEFAULT_READY_ARM_Q = np.array([0.0, 1.400, 1.230, -1.400, 0.0, 0.0], dtype=np.float64)
 
 
 class MujocoSimAdapter(BaseRobotAdapter):

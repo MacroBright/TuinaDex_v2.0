@@ -44,6 +44,11 @@ def save_to_lerobot(grid, states, actions, repo_id: str, fps: float = 50.0) -> s
             "names": {"joints": list(CANONICAL_JOINT_NAMES)}},
     }
     output_root = Path(repo_id).resolve()
+    info_path = output_root / "meta" / "info.json"
+    if output_root.exists() and not info_path.exists():
+        import shutil
+        shutil.rmtree(output_root)
+
     dataset = LeRobotDataset.create(
         repo_id=output_root.name,
         fps=int(fps),

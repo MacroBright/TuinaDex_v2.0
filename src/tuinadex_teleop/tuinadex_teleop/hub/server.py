@@ -259,14 +259,14 @@ class _HubHandler(BaseHTTPRequestHandler):
             )
             if payload is None:
                 continue
+            # RFC 2046: delimiter is CRLF + "--" + boundary. Emit each part in a
+            # single write so a slow socket can never interleave two parts.
             header = (
                 "--frame\r\n"
                 "Content-Type: image/jpeg\r\n"
                 f"Content-Length: {len(payload)}\r\n\r\n"
             ).encode("ascii")
-            self.wfile.write(header)
-            self.wfile.write(payload)
-            self.wfile.write(b"\r\n")
+            self.wfile.write(header + payload + b"\r\n")
             self.wfile.flush()
 
     def _sse(self) -> None:

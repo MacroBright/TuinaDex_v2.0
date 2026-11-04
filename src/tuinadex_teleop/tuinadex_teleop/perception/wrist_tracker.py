@@ -41,11 +41,14 @@ try:
 except ImportError:
     import os
     import sys
-    _candidate = os.path.expanduser(
-        "~/win_office/conda/envs/leap_hand/lib/python3.14/site-packages"
-    )
-    if os.path.isdir(_candidate) and _candidate not in sys.path:
-        sys.path.append(_candidate)
+    _candidates = [
+        os.path.expanduser("~/.local/lib/python3.14/site-packages"),
+        os.path.expanduser("~/win_office/conda/envs/tuinadex-control/lib/python3.10/site-packages"),
+        os.path.expanduser("~/win_office/conda/envs/leap_hand/lib/python3.14/site-packages"),
+    ]
+    for _candidate in _candidates:
+        if os.path.isdir(_candidate) and _candidate not in sys.path:
+            sys.path.append(_candidate)
     try:
         from mediapipe import Image as MpImage, ImageFormat
         from mediapipe.tasks.python import BaseOptions
@@ -315,6 +318,8 @@ class WristTracker:
         self.max_depth_m = max_depth_m
         self.depth_patch_radius = depth_patch_radius
         self.default_handedness = default_handedness
+        self._locked_handedness: str = default_handedness
+        self._handedness_switch_count: int = 0
 
         # Find model file
         resolved_model = Path(model_path) if model_path else find_default_model_path()
@@ -333,11 +338,18 @@ class WristTracker:
                 min_tracking_confidence=0.30,
             )
             self._landmarker = HandLandmarker.create_from_options(options)
+        else:
+            import logging
+            _logger = logging.getLogger("WristTracker")
+            if not _HAS_MEDIAPIPE:
+                _logger.warning("[WristTracker] MediaPipe 未安装或导入失败，人手视觉检测器不可用！")
+            elif not (self.model_path and Path(self.model_path).exists()):
+                _logger.warning(f"[WristTracker] MediaPipe 模型文件不存在: {self.model_path}")
 
-        # Filters
+        # Filters (adapted for 60Hz camera rate)
         self._pos_filter = OneEuroFilter(
             n_dim=3,
-            freq_hz=30.0,
+            freq_hz=60.0,
             min_cutoff=self.filter_min_cutoff,
             beta=self.filter_beta,
         )
@@ -365,6 +377,8 @@ class WristTracker:
         self._last_valid_pose = None
         self._last_valid_timestamp = 0.0
         self._hold_start_timestamp = None
+        self._locked_handedness = self.default_handedness
+        self._handedness_switch_count = 0
 
     def close(self) -> None:
         """Release MediaPipe resources."""
@@ -399,7 +413,9 @@ class WristTracker:
 
         # 2. Extract 2D and 3D landmarks
         landmarks_norm = detected_hand["landmarks"]  # (21, 3) normalized x, y, z
-        handedness = detected_hand.get("handedness", self.default_handedness)
+        raw_handedness = detected_hand.get("handedness", self.default_handedness)
+        score = float(detected_hand.get("score", 1.0))
+        handedness = self._update_handedness_consensus(raw_handedness, score)
 
         landmarks_2d = np.zeros((21, 2), dtype=np.float32)
         landmarks_2d[:, 0] = np.clip(landmarks_norm[:, 0] * w, 0, w - 1)
@@ -652,15 +668,29 @@ class WristTracker:
             for i, lm in enumerate(world_obj):
                 pts_world[i] = [lm.x, lm.y, lm.z]
 
-        handedness = "Right"
+        raw_handedness = self.default_handedness
+        score = 1.0
         if result.handedness and len(result.handedness) > 0 and len(result.handedness[0]) > 0:
-            handedness = result.handedness[0][0].category_name
+            raw_handedness = result.handedness[0][0].category_name
+            score = float(getattr(result.handedness[0][0], "score", 1.0))
 
         return {
             "landmarks": pts_norm,
             "world_landmarks": pts_world,
-            "handedness": handedness,
+            "handedness": raw_handedness,
+            "score": score,
         }
+
+    def _update_handedness_consensus(self, raw_handedness: str, score: float = 1.0) -> str:
+        """Filter raw handedness through temporal consensus lock to eliminate single-frame flips."""
+        if raw_handedness != self._locked_handedness:
+            self._handedness_switch_count += 1
+            if self._handedness_switch_count >= 10 and score >= 0.80:
+                self._locked_handedness = raw_handedness
+                self._handedness_switch_count = 0
+        else:
+            self._handedness_switch_count = 0
+        return self._locked_handedness
 
     def _handle_detection_lost(
         self,

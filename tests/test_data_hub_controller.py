@@ -119,3 +119,15 @@ def test_continuity_allows_gap_within_staleness_window():
         assert saved == [3]
     finally:
         ctrl.shutdown()
+
+
+def test_submit_home_action_invokes_on_home_callback():
+    channel, collector, ctrl = _make()
+    home_invoked = []
+    ctrl.on_home = lambda: home_invoked.append(True)
+    try:
+        assert ctrl.submit("home")["ok"] is True
+        ctrl.tick()
+        assert home_invoked == [True]
+    finally:
+        ctrl.shutdown()

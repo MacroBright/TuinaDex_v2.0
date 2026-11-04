@@ -153,3 +153,53 @@ def test_sse_stream_emits_telemetry(hub):
     finally:
         stop.set()
         thread.join(2.0)
+
+
+def test_mjpeg_multipart_framing_is_rfc_compliant(hub):
+    """每个分块必须是 CRLF--frame 分隔，且 Content-Length 与 JPEG 长度一致 (W11)."""
+    base, controller, server = hub
+    import threading
+
+    stop = threading.Event()
+
+    def _pump():
+        while not stop.is_set():
+            controller.tick()
+            server.stream.publish(
+                controller.channel.get_camera_packets(),
+                controller.status(),
+            )
+            time.sleep(0.01)
+
+    thread = threading.Thread(target=_pump, daemon=True)
+    thread.start()
+    buffer = b""
+    try:
+        with urllib.request.urlopen(
+            f"{base}/video/wrist", timeout=5
+        ) as response:
+            assert response.headers["Content-Type"] == (
+                "multipart/x-mixed-replace; boundary=frame"
+            )
+            deadline = time.time() + 5.0
+            while buffer.count(b"--frame") < 3 and time.time() < deadline:
+                chunk = response.read(4096)
+                if not chunk:
+                    break
+                buffer += chunk
+    finally:
+        stop.set()
+        thread.join(2.0)
+
+    parts = buffer.split(b"--frame")
+    assert len(parts) >= 3, f"expected >=2 complete parts, got {len(parts) - 1}"
+    for raw in parts[1:3]:
+        assert raw.startswith(b"\r\n"), "delimiter must begin with CRLF"
+        head, sep, rest = raw.partition(b"\r\n\r\n")
+        assert sep, "part headers must end with a blank line"
+        assert b"Content-Type: image/jpeg" in head
+        length = int(head.split(b"Content-Length: ")[1].split(b"\r\n")[0])
+        payload = rest[:length]
+        assert payload[:2] == b"\xff\xd8", "JPEG SOI missing"
+        assert payload[-2:] == b"\xff\xd9", "JPEG EOI missing"
+        assert rest[length:length + 2] == b"\r\n", "part must close with CRLF"

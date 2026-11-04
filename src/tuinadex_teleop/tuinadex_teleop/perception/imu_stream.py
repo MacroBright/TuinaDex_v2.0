@@ -28,10 +28,14 @@ if _REBOT_IMU_DIR.exists() and str(_REBOT_IMU_DIR) not in sys.path:
     sys.path.insert(0, str(_REBOT_IMU_DIR))
 
 try:
-    from rebot_imu.protocol import YbImuProtocol, ImuDataSnapshot
+    from .imu_protocol import YbImuProtocol, ImuDataSnapshot
     _HAS_REBOT_IMU_PROTOCOL = True
 except ImportError:
-    _HAS_REBOT_IMU_PROTOCOL = False
+    try:
+        from rebot_imu.protocol import YbImuProtocol, ImuDataSnapshot
+        _HAS_REBOT_IMU_PROTOCOL = True
+    except ImportError:
+        _HAS_REBOT_IMU_PROTOCOL = False
 
 
 # Default downward rotation (maps +Z_tool to -Z_base, identical to ArmIKSolver.R_DOWNWARD_DEFAULT)
@@ -139,6 +143,154 @@ def parse_axis_mapping(mapping_str: str) -> np.ndarray:
         col = axis_map[char]
         R[row, col] = sign
     return R
+
+
+# ---------------------------------------------------------------------------
+# W9: hotkey interaction state machine (pure; no ROS and no pinocchio import).
+# ---------------------------------------------------------------------------
+AXIS_MAPPING_CYCLE: Tuple[str, ...] = (
+    "-y,+x,+z",
+    "+x,+y,+z",
+    "-x,+y,+z",
+    "+y,+x,+z",
+)
+
+# Comprehensive 48-element signed 3-axis permutation mapping table for IMU retargeting
+ALL_IMU_AXIS_MAPPINGS: Tuple[str, ...] = (
+    # Group 1: Canonical Z-up alignments (horizontal / dorsal wrist mountings)
+    "-y,+x,+z",  # Default / 90 deg yaw
+    "+x,+y,+z",  # Identity (REP-103 ENU)
+    "+y,-x,+z",  # Hand dorsal mounting (270 deg yaw)
+    "-x,-y,+z",  # 180 deg yaw
+    "+y,+x,+z",  # XY swapped
+    "-x,+y,+z",  # X negated (pitch inverted)
+    "+x,-y,+z",  # Y negated (roll inverted)
+    "-y,-x,+z",  # XY swapped & negated
+
+    # Group 2: Z-down alignments (inverted / ventral wrist mountings)
+    "+x,-y,-z",  # 180 deg roll
+    "-x,+y,-z",  # 180 deg pitch
+    "+y,+x,-z",  # XY swapped, Z negated
+    "-y,-x,-z",
+    "+x,+y,-z",  # Z negated (yaw inverted)
+    "-y,+x,-z",
+    "-x,-y,-z",
+    "+y,-x,-z",
+
+    # Group 3: Y-vertical alignments (lateral wrist / thumb-up mountings)
+    "+x,+z,-y",
+    "+x,-z,+y",
+    "-x,+z,+y",
+    "-x,-z,-y",
+    "+z,+x,+y",
+    "+z,-x,-y",
+    "-z,+x,-y",
+    "-z,-x,+y",
+    "+x,+z,+y",
+    "+x,-z,-y",
+    "-x,+z,-y",
+    "-x,-z,+y",
+    "+z,+x,-y",
+    "+z,-x,+y",
+    "-z,+x,+y",
+    "-z,-x,-y",
+
+    # Group 4: X-vertical alignments (lateral wrist / pinky-up mountings)
+    "+y,+z,+x",
+    "+y,-z,-x",
+    "-y,+z,-x",
+    "-y,-z,+x",
+    "+z,+y,-x",
+    "+z,-y,+x",
+    "-z,+y,+x",
+    "-z,-y,-x",
+    "+y,+z,-x",
+    "+y,-z,+x",
+    "-y,+z,+x",
+    "-y,-z,-x",
+    "+z,+y,+x",
+    "+z,-y,-x",
+    "-z,+y,-x",
+    "-z,-y,+x",
+)
+
+ORIENTATION_MODE_ORDER: Tuple[str, ...] = (
+    "FIXED_DOWNWARD",
+    "TRACK_IMU",
+    "TRACK_WRIST",
+)
+
+
+def cycle_axis_mapping(current: str) -> str:
+    """Return the next position axis mapping in the standard cycle."""
+    try:
+        index = AXIS_MAPPING_CYCLE.index(current)
+    except ValueError:
+        index = -1
+    return AXIS_MAPPING_CYCLE[(index + 1) % len(AXIS_MAPPING_CYCLE)]
+
+
+def cycle_imu_axis_mapping(current: str, forward: bool = True) -> str:
+    """Cycle through all 48 3-axis IMU permutations and sign combinations."""
+    try:
+        index = ALL_IMU_AXIS_MAPPINGS.index(current)
+    except ValueError:
+        index = 0 if forward else -1
+        return ALL_IMU_AXIS_MAPPINGS[index]
+    step = 1 if forward else -1
+    return ALL_IMU_AXIS_MAPPINGS[(index + step) % len(ALL_IMU_AXIS_MAPPINGS)]
+
+
+def swap_axis_mapping(mapping: str) -> str:
+    """Swap the first two axis tokens, e.g. '+x,+y,+z' -> '+y,+x,+z'."""
+    tokens = [token.strip() for token in str(mapping).split(",")]
+    if len(tokens) != 3:
+        raise ValueError(f"axis mapping must have 3 tokens, got '{mapping}'")
+    tokens[0], tokens[1] = tokens[1], tokens[0]
+    return ",".join(tokens)
+
+
+def cycle_orientation_mode(current: Any) -> Any:
+    """Cycle FIXED_DOWNWARD -> TRACK_IMU -> TRACK_WRIST on the given enum."""
+    name = getattr(current, "name", str(current))
+    try:
+        index = ORIENTATION_MODE_ORDER.index(name)
+    except ValueError:
+        index = -1
+    next_name = ORIENTATION_MODE_ORDER[(index + 1) % len(ORIENTATION_MODE_ORDER)]
+    return type(current)[next_name]
+
+
+def hotkey_allowed(
+    clutch_state: Any,
+    arm_speed_rad_s: float,
+    max_speed_rad_s: float = 0.05,
+) -> Tuple[bool, str]:
+    """I40: refuse mapping/zero hotkeys during engaged high-speed motion."""
+    state_name = getattr(clutch_state, "name", str(clutch_state))
+    if state_name == "ENGAGED" and arm_speed_rad_s > max_speed_rad_s:
+        return (
+            False,
+            f"BLOCKED: arm moving {arm_speed_rad_s:.2f} rad/s while ENGAGED (I40)",
+        )
+    return True, ""
+
+
+@dataclass
+class HotkeyState:
+    """Toast + active-state bookkeeping shared by the node and HUD."""
+
+    axis_mapping: str
+    orientation_mode: Any
+    toast: str = ""
+    toast_deadline: float = 0.0
+
+    def toast_now(self, text: str, now: float, seconds: float = 1.0) -> None:
+        self.toast = text
+        self.toast_deadline = now + seconds
+
+    def active_toast(self, now: float) -> str:
+        return self.toast if now < self.toast_deadline else ""
 
 
 def rotation_matrix_to_rotvec(R: np.ndarray) -> np.ndarray:
@@ -475,6 +627,22 @@ class WristImuTracker:
         """Set coordinate axis permutation string, e.g. '+x,+y,+z', '-y,+x,+z'."""
         self.R_align = parse_axis_mapping(mapping_str)
         self.axis_mapping_str = mapping_str
+
+    def swap_xy_axes(self) -> str:
+        """Swap the first two mapping tokens (W9 hotkey [X]); returns new mapping."""
+        mapping = swap_axis_mapping(self.axis_mapping_str)
+        self.set_axis_mapping(mapping)
+        return mapping
+
+    def cycle_axis_mapping(self, forward: bool = True) -> tuple[str, int, int]:
+        """Cycle through all 48 3-axis permutations and sign combinations (hotkey [X])."""
+        mapping = cycle_imu_axis_mapping(self.axis_mapping_str, forward=forward)
+        self.set_axis_mapping(mapping)
+        try:
+            idx = ALL_IMU_AXIS_MAPPINGS.index(mapping) + 1
+        except ValueError:
+            idx = 1
+        return mapping, idx, len(ALL_IMU_AXIS_MAPPINGS)
 
     def zero(self, reading: Optional[ImuReading] = None) -> None:
         """Establish current posture as the zero-reference neutral orientation."""

@@ -18,7 +18,7 @@ from typing import Dict, List, Optional, Tuple, Union
 
 import numpy as np
 
-from ..core.filters import OneEuroFilter
+from ..core.filters import LandmarkOneEuroFilter, OneEuroFilter
 from ..core.names import CANONICAL_HAND_JOINT_NAMES, HAND_NUM_DOFS
 from ..core.types import TeleopHandCommand
 from ..perception.wrist_tracker import (
@@ -165,11 +165,11 @@ class BiomechanicalKinematicRetargeter:
         v_inter_idx = pts_local[LM_INDEX_DIP] - pts_local[LM_INDEX_PIP]
         v_dist_idx = pts_local[LM_INDEX_TIP] - pts_local[LM_INDEX_DIP]
 
-        # Lateral spread (yaw) relative to palm forward axis (+Y)
-        q[0] = math.atan2(v_prox_idx[0], max(1e-4, v_prox_idx[1])) * 0.70
-        # MCP pitch flexion: elevation out of palm plane (Z=0) down toward palmar (-Z) direction
-        in_plane_idx = math.hypot(v_prox_idx[0], v_prox_idx[1])
-        ang_mcp_idx = math.atan2(-v_prox_idx[2], max(1e-4, in_plane_idx))
+        # Lateral spread (yaw): project against sagittal length hypot(v_y, v_z) to avoid division by zero during flexion
+        r_sagittal_idx = math.hypot(v_prox_idx[1], v_prox_idx[2])
+        q[0] = math.atan2(v_prox_idx[0], max(1e-4, r_sagittal_idx)) * 0.70
+        # MCP pitch flexion: continuous atan2(-v_z, v_y) preventing reversal past 90 deg into fist
+        ang_mcp_idx = math.atan2(-v_prox_idx[2], v_prox_idx[1])
         ang_pip_idx = angle_between_vectors(v_prox_idx, v_inter_idx)
         ang_dip_idx = angle_between_vectors(v_inter_idx, v_dist_idx)
 
@@ -185,9 +185,9 @@ class BiomechanicalKinematicRetargeter:
         v_inter_mid = pts_local[LM_MIDDLE_DIP] - pts_local[LM_MIDDLE_PIP]
         v_dist_mid = pts_local[LM_MIDDLE_TIP] - pts_local[LM_MIDDLE_DIP]
 
-        q[4] = math.atan2(v_prox_mid[0], max(1e-4, v_prox_mid[1])) * 0.70
-        in_plane_mid = math.hypot(v_prox_mid[0], v_prox_mid[1])
-        ang_mcp_mid = math.atan2(-v_prox_mid[2], max(1e-4, in_plane_mid))
+        r_sagittal_mid = math.hypot(v_prox_mid[1], v_prox_mid[2])
+        q[4] = math.atan2(v_prox_mid[0], max(1e-4, r_sagittal_mid)) * 0.70
+        ang_mcp_mid = math.atan2(-v_prox_mid[2], v_prox_mid[1])
         ang_pip_mid = angle_between_vectors(v_prox_mid, v_inter_mid)
         ang_dip_mid = angle_between_vectors(v_inter_mid, v_dist_mid)
 
@@ -208,9 +208,9 @@ class BiomechanicalKinematicRetargeter:
         v_dist_pky = pts_local[LM_PINKY_TIP] - pts_local[LM_PINKY_DIP]
 
         # Angles for ring finger
-        ring_yaw = math.atan2(v_prox_ring[0], max(1e-4, v_prox_ring[1])) * 0.70
-        in_plane_ring = math.hypot(v_prox_ring[0], v_prox_ring[1])
-        ang_mcp_ring = math.atan2(-v_prox_ring[2], max(1e-4, in_plane_ring))
+        r_sagittal_ring = math.hypot(v_prox_ring[1], v_prox_ring[2])
+        ring_yaw = math.atan2(v_prox_ring[0], max(1e-4, r_sagittal_ring)) * 0.70
+        ang_mcp_ring = math.atan2(-v_prox_ring[2], v_prox_ring[1])
         ang_pip_ring = angle_between_vectors(v_prox_ring, v_inter_ring)
         ang_dip_ring = angle_between_vectors(v_inter_ring, v_dist_ring)
         ring_mcp = ang_mcp_ring * 1.75
@@ -218,9 +218,9 @@ class BiomechanicalKinematicRetargeter:
         ring_dip = ang_dip_ring * 1.15 + max(0.0, ang_pip_ring - 0.20) * 0.45
 
         # Angles for pinky finger
-        pky_yaw = math.atan2(v_prox_pky[0], max(1e-4, v_prox_pky[1])) * 0.70
-        in_plane_pky = math.hypot(v_prox_pky[0], v_prox_pky[1])
-        ang_mcp_pky = math.atan2(-v_prox_pky[2], max(1e-4, in_plane_pky))
+        r_sagittal_pky = math.hypot(v_prox_pky[1], v_prox_pky[2])
+        pky_yaw = math.atan2(v_prox_pky[0], max(1e-4, r_sagittal_pky)) * 0.70
+        ang_mcp_pky = math.atan2(-v_prox_pky[2], v_prox_pky[1])
         ang_pip_pky = angle_between_vectors(v_prox_pky, v_inter_pky)
         ang_dip_pky = angle_between_vectors(v_inter_pky, v_dist_pky)
         pky_mcp = ang_mcp_pky * 1.75
@@ -244,11 +244,14 @@ class BiomechanicalKinematicRetargeter:
         # Opposition & fist curl synergy:
         # Distance from thumb tip to index/middle base indicates opposition and fist closure.
         d_oppose = float(np.linalg.norm(pts_local[LM_THUMB_TIP] - pts_local[LM_INDEX_MCP]))
-        oppose_boost = max(0.0, min(1.0, (0.080 - d_oppose) / 0.045))
+        raw_oppose = float(np.clip((0.080 - d_oppose) / 0.045, 0.0, 1.0))
+        # Smoothstep S(x) = 3x^2 - 2x^3 to eliminate abrupt step twitches
+        oppose_boost = raw_oppose * raw_oppose * (3.0 - 2.0 * raw_oppose)
         ang_mcp = angle_between_vectors(v_mcp, v_ip)
         ang_ip = angle_between_vectors(v_ip, v_tip)
 
-        q[12] = (math.atan2(v_mcp[0], max(1e-4, v_mcp[1])) * 0.85) + 0.45 * oppose_boost  # thumb_yaw
+        r_sagittal_thumb = math.hypot(v_mcp[1], v_mcp[2])
+        q[12] = (math.atan2(v_mcp[0], max(1e-4, r_sagittal_thumb)) * 0.85) + 0.45 * oppose_boost  # thumb_yaw
         q[13] = angle_between_vectors(v_cmc, v_mcp) * 1.20 + 0.35 * oppose_boost          # thumb_cmc
         q[14] = ang_mcp * 1.45 + 0.35 * oppose_boost                                     # thumb_mcp
         # Distal IP joint (id 15): human thumb has 2 flexion joints (MCP/IP) vs LEAP Hand's 3 joints (CMC/MCP/IP).
@@ -264,6 +267,14 @@ class BiomechanicalKinematicRetargeter:
 # Keep backward-compatible alias
 FallbackKinematicRetargeter = BiomechanicalKinematicRetargeter
 
+# Natural relaxed four-finger open zero offset (corresponds to post-[Z] calibration posture)
+DEFAULT_OPEN_ZERO_OFFSET = np.array([
+    0.0, 0.0, 0.0, 0.0,
+    0.0, 0.0, 0.0, 0.0,
+    0.0, 0.0, 0.0, 0.0,
+    -0.2828, 0.4142, 0.4132, 0.5698,
+], dtype=np.float64)
+
 
 class HandRetargeter:
     """High-precision LEAP Hand retargeter fusing 3D Keypoints and Kinematic Optimization."""
@@ -274,13 +285,15 @@ class HandRetargeter:
         config_path: Optional[str] = None,
         solver_mode: str = "hybrid",
         scaling_factor: float = 1.60,
-        filter_min_cutoff: float = 1.0,
-        filter_beta: float = 0.05,
+        filter_freq_hz: float = 60.0,
+        filter_min_cutoff: float = 0.8,
+        filter_beta: float = 0.06,
         pinch_threshold_m: float = 0.035,
         max_joint_velocity_rad_s: float = 8.0,
     ):
         self.solver_mode = solver_mode.lower()
         self.scaling_factor = scaling_factor
+        self.filter_freq_hz = filter_freq_hz
         self.pinch_threshold_m = pinch_threshold_m
         self.max_joint_velocity_rad_s = max_joint_velocity_rad_s
         self.q_zero_offset: Optional[np.ndarray] = None
@@ -323,12 +336,13 @@ class HandRetargeter:
             [-0.366,  2.042],  # thumb_ip
         ], dtype=np.float64)
 
-        # 1€ Filter for 16 joint angles
+        # 1€ Filter for 16 joint angles (adapted for 60Hz loop rate)
         self._filter = OneEuroFilter(
             n_dim=HAND_NUM_DOFS,
-            freq_hz=30.0,
+            freq_hz=filter_freq_hz,
             min_cutoff=filter_min_cutoff,
             beta=filter_beta,
+            d_cutoff=1.2,
         )
 
         # Biomechanical retargeter with ulnar synergy
@@ -454,6 +468,15 @@ class HandRetargeter:
         """Return diagnostic metrics from the last retargeting step."""
         return self._last_metrics
 
+    @property
+    def last_metrics(self) -> HandRetargetingMetrics:
+        """Alias for metrics."""
+        return self._last_metrics
+
+    def get_metrics(self) -> HandRetargetingMetrics:
+        """Return diagnostic metrics from the last retargeting step."""
+        return self._last_metrics
+
     def retarget_pose(
         self,
         wrist_pose: WristPose,
@@ -474,8 +497,16 @@ class HandRetargeter:
         t_start = time.perf_counter()
 
         # 1. Transform 21 landmarks into local hand coordinate frame
-        # Prefer true metric world landmarks (MediaPipe hand_world_landmarks) with depth
-        if wrist_pose.landmarks_world_3d is not None and np.any(wrist_pose.landmarks_world_3d != 0):
+        # Check if world landmarks are valid and physiologically plausible (non-zero and non-degenerate palm length)
+        use_world = False
+        if wrist_pose.landmarks_world_3d is not None:
+            w_pts = wrist_pose.landmarks_world_3d
+            if w_pts.shape == (21, 3) and np.all(np.isfinite(w_pts)) and not np.all(w_pts == 0):
+                w_span = float(np.linalg.norm(w_pts[LM_MIDDLE_MCP] - w_pts[LM_WRIST]))
+                if 0.04 < w_span < 0.20:
+                    use_world = True
+
+        if use_world:
             pts_source = wrist_pose.landmarks_world_3d.copy()
             p_wrist = pts_source[LM_WRIST]
             _, _, _, R_basis = compute_palm_basis(pts_source, wrist_pose.handedness)

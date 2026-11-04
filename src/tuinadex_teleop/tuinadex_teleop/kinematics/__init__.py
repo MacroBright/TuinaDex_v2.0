@@ -6,6 +6,7 @@ from .arm_ik_solver import (
     R_DOWNWARD_DEFAULT,
 )
 from .hand_retargeter import (
+    DEFAULT_OPEN_ZERO_OFFSET,
     FallbackKinematicRetargeter,
     HandRetargeter,
     HandRetargetingMetrics,
@@ -15,6 +16,7 @@ __all__ = [
     "ArmIKMetrics",
     "ArmIKSolver",
     "ArmOrientationMode",
+    "DEFAULT_OPEN_ZERO_OFFSET",
     "FallbackKinematicRetargeter",
     "HandRetargeter",
     "HandRetargetingMetrics",

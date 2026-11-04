@@ -71,10 +71,10 @@
 
     <!-- Cameras -->
     <camera name="overview" pos="1.10 -1.15 1.55" xyaxes="0.707 0.707 0 -0.408 0.408 0.816" fovy="48"/>
-    <camera name="side_view" pos="0.20 -1.35 1.10" xyaxes="1 0 0 0 0.342 0.940" fovy="52"/>
+    <camera name="side_view" pos="0.20 -1.35 1.25" xyaxes="1 0 0 0 0.342 0.940" fovy="52"/>
     <camera name="realsense_sim_cam" pos="0.20 -0.85 1.30" xyaxes="1 0 0 0 0.643 0.766" fovy="55"/>
-    <camera name="overhead_cam" pos="0.20 -0.85 1.45" xyaxes="1 0 0 0 0.766 0.643" fovy="60"/>
-    <camera name="side_cam" pos="0.20 -1.35 0.78" xyaxes="1 0 0 0 0 1" fovy="45"/>
+    <camera name="overhead_cam" pos="0.35 -0.15 1.85" xyaxes="1 0 0 0 1 0" fovy="68"/>
+    <camera name="side_cam" pos="-0.65 -0.20 1.10" xyaxes="0 -1 0 0 0 1" fovy="52"/>
 
     <!-- Ground Floor -->
     <geom name="floor" size="3 3 0.05" type="plane" material="ground_mat"/>
@@ -89,21 +89,37 @@
       <!-- Patient Male Torso Model (Prone / 俯卧, Back Facing +Z towards sky/robot, 1.5x scale) -->
       <body name="patient_dummy" pos="0.0331 0.4608 0.3676" quat="0.0 0.7071068 0.0 0.7071068">
         <!-- Anatomical Male Torso Target for Tuina -->
-        <geom name="dummy_torso" type="mesh" mesh="male_torso" material="dummy_skin_mat"
-              solref="0.003 1" solimp="0.96 0.99 0.0005"/>
+        <!-- Visual representation: male_torso mesh (non-colliding) -->
+        <geom name="dummy_torso_vis" type="mesh" mesh="male_torso" material="dummy_skin_mat"
+              contype="0" conaffinity="0" group="1"/>
+        <!-- Segmented Anatomical Collision Capsules conforming to visual skin (transparent for VLA vision, 100% collision preserved) -->
+        <geom name="col_sacrum" type="capsule" fromto="0.4924 0.3758 0.0669  0.4924 0.5458 0.0669" size="0.0800" rgba="0 0 0 0" group="3" solref="0.003 1" solimp="0.96 0.99 0.0005"/>
+        <geom name="col_lower_lumbar" type="capsule" fromto="0.4644 0.3858 0.1169  0.4644 0.5358 0.1169" size="0.0800" rgba="0 0 0 0" group="3" solref="0.003 1" solimp="0.96 0.99 0.0005"/>
+        <geom name="col_lumbar" type="capsule" fromto="0.4524 0.3888 0.1669  0.4524 0.5328 0.1669" size="0.0800" rgba="0 0 0 0" group="3" solref="0.003 1" solimp="0.96 0.99 0.0005"/>
+        <geom name="col_thoracolumbar" type="capsule" fromto="0.4604 0.3708 0.2169  0.4604 0.5508 0.2169" size="0.0800" rgba="0 0 0 0" group="3" solref="0.003 1" solimp="0.96 0.99 0.0005"/>
+        <geom name="col_lower_thoracic" type="capsule" fromto="0.4804 0.3558 0.2669  0.4804 0.5658 0.2669" size="0.0800" rgba="0 0 0 0" group="3" solref="0.003 1" solimp="0.96 0.99 0.0005"/>
+        <geom name="col_mid_thoracic" type="capsule" fromto="0.4944 0.3408 0.3169  0.4944 0.5808 0.3169" size="0.0800" rgba="0 0 0 0" group="3" solref="0.003 1" solimp="0.96 0.99 0.0005"/>
+        <geom name="col_upper_thoracic" type="capsule" fromto="0.5174 0.3258 0.3869  0.5174 0.5958 0.3869" size="0.0800" rgba="0 0 0 0" group="3" solref="0.003 1" solimp="0.96 0.99 0.0005"/>
+        <geom name="col_scapula_high" type="capsule" fromto="0.5224 0.3158 0.4469  0.5224 0.6058 0.4469" size="0.0800" rgba="0 0 0 0" group="3" solref="0.003 1" solimp="0.96 0.99 0.0005"/>
+        <geom name="col_cervical_neck" type="capsule" fromto="0.5074 0.4008 0.5669  0.5074 0.5208 0.5669" size="0.0700" rgba="0 0 0 0" group="3" solref="0.003 1" solimp="0.96 0.99 0.0005"/>
+        <geom name="col_head_occiput" type="capsule" fromto="0.4674 0.4508 0.7169  0.4674 0.4708 0.7169" size="0.0750" rgba="0 0 0 0" group="3" solref="0.003 1" solimp="0.96 0.99 0.0005"/>
+        <geom name="col_arm_left" type="capsule" fromto="0.3574 0.7408 0.0669  0.3574 0.7408 0.4169" size="0.0450" rgba="0 0 0 0" group="3" solref="0.003 1" solimp="0.96 0.99 0.0005"/>
+        <geom name="col_arm_right" type="capsule" fromto="0.3574 0.1808 0.0669  0.3574 0.1808 0.4169" size="0.0450" rgba="0 0 0 0" group="3" solref="0.003 1" solimp="0.96 0.99 0.0005"/>
       </body>
     </body>
 
     <!-- ==================================================================== -->
     <!-- Composite Robot: reBot-DevArm (6-DOF) + LEAP Hand (16-DOF)            -->
-    <!-- Mounted on a heavy stand adjacent to the bed at (0.20, -0.55, 0.32)   -->
+    <!-- Mounted on a heavy stand adjacent to the bed at (0.20, -0.45, 0.345)  -->
+    <!-- Shifted ~10cm closer to bed (Y: -0.55m -> -0.45m), snug against bed edge -->
+    <!-- End-effector ready posture raised +3cm along Z (0.951m -> 0.981m)     -->
     <!-- ==================================================================== -->
-    <body name="robot_stand" pos="0.20 -0.55 0.32">
-      <geom name="stand_pillar" type="box" size="0.12 0.12 0.32" material="stand_mat"/>
-      <geom name="stand_flange" type="cylinder" size="0.14 0.015" pos="0 0 0.32" material="stand_mat"/>
+    <body name="robot_stand" pos="0.20 -0.45 0.345">
+      <geom name="stand_pillar" type="box" size="0.12 0.075 0.345" material="stand_mat"/>
+      <geom name="stand_flange" type="cylinder" size="0.075 0.015" pos="0 0 0.345" material="stand_mat"/>
 
       <!-- Robot Base mounted rotated +90 deg (facing towards bed center +Y) -->
-      <body name="base_link" pos="0 0 0.335" euler="0 0 1.5707963">
+      <body name="base_link" pos="0 0 0.360" euler="0 0 1.5707963">
         <geom type="mesh" material="rs_base_black" mesh="base_link"/>
         
         <!-- Link 1 -->
@@ -144,7 +160,7 @@
                     
                     <!-- LEAP Hand Mounted on Link 6 Flange -->
                     <body name="leap_hand_palm" pos="0.0586 -0.0371 0.0203" quat="0 1 0 0" childclass="leap_hand">
-                    <camera name="wrist_cam" pos="0 -0.03 0.04" xyaxes="1 0 0 0 0.7071 0.7071" fovy="75"/>
+                    <camera name="wrist_cam" pos="0.04 0 0.20" xyaxes="1 0 0 0 1 0" fovy="80"/>
                     <geom pos="-0.0200952 0.0257578 -0.0347224" quat="1 0 0 0" type="mesh" material="leap_palm" mesh="palm_lower"/>
 
                       <!-- Index Finger (4 DOF) -->
@@ -250,6 +266,7 @@
     <exclude body1="base_link" body2="link1"/>
     <exclude body1="link1" body2="link2"/>
     <exclude body1="link2" body2="link3"/>
+    <exclude body1="link2" body2="link5"/>
     <exclude body1="link3" body2="link4"/>
     <exclude body1="link4" body2="link5"/>
     <exclude body1="link5" body2="link6"/>
@@ -316,4 +333,9 @@
     <position name="act_thumb_mcp" joint="thumb_mcp" kp="95.0" kv="2.2" ctrlrange="-1.2 1.9"/>
     <position name="act_thumb_ip" joint="thumb_ip" kp="90.0" kv="2.0" ctrlrange="-1.34 1.88"/>
   </actuator>
+
+  <keyframe>
+    <!-- Tuina Ready Stance: Parallel Palm Hovering Safely Above Bed (Raised +3cm along Z: Palm Z=0.981m, 4 fingers open 0 rad) -->
+    <key name="home" qpos="0 1.400 1.230 -1.400 0 0  0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0"/>
+  </keyframe>
 </mujoco>

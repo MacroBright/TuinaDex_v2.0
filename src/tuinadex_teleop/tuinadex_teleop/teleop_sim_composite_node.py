@@ -37,6 +37,7 @@ if sys.version_info[:2] == (3, 10):
 import rclpy
 from rclpy.node import Node
 from sensor_msgs.msg import JointState
+from std_msgs.msg import Empty
 
 from tuinadex_core.names import CANONICAL_ARM_JOINT_NAMES, CANONICAL_JOINT_NAMES
 
@@ -65,6 +66,7 @@ from tuinadex_teleop.kinematics.arm_ik_solver import (
     R_DOWNWARD_DEFAULT,
 )
 from tuinadex_teleop.kinematics.hand_retargeter import (
+    DEFAULT_OPEN_ZERO_OFFSET,
     HandRetargeter,
     HandRetargetingMetrics,
 )
@@ -85,6 +87,13 @@ from tuinadex_teleop.perception.imu_stream import (
     MockImuStream,
     WristImuTracker,
 )
+
+
+def _parse_bool(val: Any) -> bool:
+    """Safely parse boolean values, converting string representations robustly."""
+    if isinstance(val, str):
+        return val.strip().lower() in ("true", "1", "yes", "on")
+    return bool(val)
 
 
 def _resolve_config_path(rel_path: str) -> Path:
@@ -135,30 +144,34 @@ class TeleopSimCompositeNode(Node):
         self.declare_parameter("no_imu", False)
         self.declare_parameter("no_safety", False)
         self.declare_parameter("auto_engage", True)
-        self.declare_parameter("publish_rate_hz", 30.0)
+        self.declare_parameter("publish_rate_hz", 60.0)
+        self.declare_parameter("camera_fps", 0)
         self.declare_parameter("solver_mode", "hybrid")
         self.declare_parameter("axis_mapping", "-y,+x,+z")
         self.declare_parameter("imu_axis_mapping", "+x,+y,+z")
+        self.declare_parameter("gui", False)
 
         self.model_path = _resolve_config_path(str(self.get_parameter("model_path").value))
         self.session_config_p = _resolve_config_path(str(self.get_parameter("session_config").value))
         self.table_config_p = _resolve_config_path(str(self.get_parameter("table_config").value))
         self.urdf_arm_p = _resolve_config_path(str(self.get_parameter("urdf_arm_path").value))
         self.urdf_hand_p = _resolve_config_path(str(self.get_parameter("urdf_hand_path").value))
-        self.use_sim = bool(self.get_parameter("use_sim").value)
-        self.mock = bool(self.get_parameter("mock").value)
-        self.mock_imu = bool(self.get_parameter("mock_imu").value)
-        self.no_imu = bool(self.get_parameter("no_imu").value)
-        self.no_safety = bool(self.get_parameter("no_safety").value)
-        self.auto_engage = bool(self.get_parameter("auto_engage").value)
+        self.use_sim = _parse_bool(self.get_parameter("use_sim").value)
+        self.mock = _parse_bool(self.get_parameter("mock").value)
+        self.mock_imu = _parse_bool(self.get_parameter("mock_imu").value)
+        self.no_imu = _parse_bool(self.get_parameter("no_imu").value)
+        self.no_safety = _parse_bool(self.get_parameter("no_safety").value)
+        self.auto_engage = _parse_bool(self.get_parameter("auto_engage").value)
         self.publish_rate_hz = float(self.get_parameter("publish_rate_hz").value)
+        self.camera_fps = int(self.get_parameter("camera_fps").value)
         self.solver_mode = str(self.get_parameter("solver_mode").value)
         self.axis_mapping = str(self.get_parameter("axis_mapping").value)
         self.imu_axis_mapping = str(self.get_parameter("imu_axis_mapping").value)
+        self.gui = _parse_bool(self.get_parameter("gui").value)
 
         self.get_logger().info(
             f"Initializing TeleopSimCompositeNode: use_sim={self.use_sim}, mock={self.mock}, "
-            f"rate={self.publish_rate_hz}Hz, axis_mapping='{self.axis_mapping}'"
+            f"no_imu={self.no_imu}, mock_imu={self.mock_imu}, rate={self.publish_rate_hz}Hz, axis_mapping='{self.axis_mapping}'"
         )
 
         # 1. Perception setup
@@ -175,7 +188,11 @@ class TeleopSimCompositeNode(Node):
         else:
             self.get_logger().info("Connecting to physical Intel RealSense D455...")
             try:
-                self.stream = RealSenseStream(width=640, height=480, fps=30)
+                self.stream = RealSenseStream(
+                    width=640,
+                    height=480,
+                    fps=(self.camera_fps if self.camera_fps > 0 else None),
+                )
             except Exception as e:
                 self.get_logger().warning(f"Physical RealSense init failed ({e}), falling back to MOCK camera stream.")
                 self.stream = MockRealSenseStream()
@@ -185,15 +202,18 @@ class TeleopSimCompositeNode(Node):
         # IMU stream
         if self.no_imu:
             self.imu_stream = None
-            self.get_logger().info("IMU tracking disabled.")
-        elif self.mock or self.mock_imu:
-            self.get_logger().info("Starting MOCK IMU stream...")
+            self.get_logger().info("[IMU] IMU tracking disabled (no_imu=True).")
+        elif self.mock_imu:
+            self.get_logger().info("[IMU] Starting MOCK IMU stream (mock_imu=True)...")
             self.imu_stream = MockImuStream()
             self.imu_stream.start()
         else:
+            self.get_logger().info("[IMU] Connecting to physical 6-axis IMU (/dev/myimu or /dev/ttyUSB*)...")
             self.imu_stream = ImuStream(auto_detect=True)
-            if not self.imu_stream.start():
-                self.get_logger().warning("Physical IMU not found, falling back to MOCK IMU.")
+            if self.imu_stream.start():
+                self.get_logger().info(f"[IMU] Physical IMU connected on {self.imu_stream.port} @ 115200 baud.")
+            else:
+                self.get_logger().warning("[IMU] Physical IMU not found or cannot be opened, falling back to MOCK IMU.")
                 self.imu_stream = MockImuStream()
                 self.imu_stream.start()
 
@@ -251,6 +271,8 @@ class TeleopSimCompositeNode(Node):
             q_zero = h_info.get("q_zero_offset")
             palm_l = h_info.get("measured_palm_length_m")
             self.hand_retargeter.set_calibration(q_zero_offset=q_zero, palm_reference_length_m=palm_l)
+        else:
+            self.hand_retargeter.set_calibration(q_zero_offset=DEFAULT_OPEN_ZERO_OFFSET)
 
         # 3. Safety Supervisor
         safety_cfg = SafetyConfig()
@@ -284,9 +306,12 @@ class TeleopSimCompositeNode(Node):
             self.latest_obs = self.sim_adapter.read_observation()
             self.contact_forces = self.sim_adapter.get_contact_forces()
 
-        # 5. Publishers
+        # 5. Publishers & Subscribers
         self.arm_cmd_pub = self.create_publisher(JointState, "/arm/joint_command", 10)
         self.hand_cmd_pub = self.create_publisher(JointState, "/hand/joint_command", 10)
+        self.home_sub = self.create_subscription(
+            Empty, "/teleop/home", lambda _: self._handle_home_pose(), 10
+        )
 
         if self.use_sim:
             self.arm_state_pub = self.create_publisher(JointState, "/arm/joint_states", 10)
@@ -299,9 +324,42 @@ class TeleopSimCompositeNode(Node):
         self.current_orientation_mode = (
             ArmOrientationMode.TRACK_IMU if self.imu_stream is not None else ArmOrientationMode.FIXED_DOWNWARD
         )
+        from .perception.imu_stream import HotkeyState
+        self.hotkeys = HotkeyState(
+            axis_mapping=self.clutch.axis_mapping_str,
+            orientation_mode=self.current_orientation_mode,
+        )
 
         self.last_step_time = time.time()
         self.frame_count = 0
+        self._last_stream_seq = -1
+        self._last_wrist_pose = None
+
+        # Direct UDP Broadcast socket for cross-environment IPC
+        import socket
+        self._udp_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        self._udp_dest = ("127.0.0.1", 9876)
+
+        # Listen for UDP HOME trigger from Web Hub
+        self._udp_home_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        try:
+            self._udp_home_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            self._udp_home_sock.bind(("127.0.0.1", 9877))
+            self._udp_home_sock.settimeout(0.2)
+            def _udp_home_worker():
+                import rclpy
+                while rclpy.ok():
+                    try:
+                        data, _ = self._udp_home_sock.recvfrom(32)
+                        if data == b"HOME":
+                            self._handle_home_pose()
+                    except socket.timeout:
+                        continue
+                    except Exception:
+                        break
+            threading.Thread(target=_udp_home_worker, daemon=True).start()
+        except Exception as exc:
+            self.get_logger().debug(f"UDP home listener inactive: {exc}")
 
         # Periodic timer
         timer_period = 1.0 / max(1.0, self.publish_rate_hz)
@@ -320,14 +378,24 @@ class TeleopSimCompositeNode(Node):
         if self.mock and depth is None:
             depth = np.ones((self.intrinsics.height, self.intrinsics.width), dtype=np.float32) * 0.65
 
-        # 1. Perception
-        wrist_pose = self.wrist_tracker.process_frame(
-            color_bgr=color,
-            depth_m=depth,
-            intrinsics=self.intrinsics,
-            table_calib=self.calib_data,
-            timestamp=t_now,
+        # 1. Perception (once per captured frame; the 60Hz loop reuses the pose, I38)
+        stream_seq = (
+            self.stream.latest_seq()
+            if hasattr(self.stream, "latest_seq")
+            else self.frame_count
         )
+        if stream_seq == self._last_stream_seq and self._last_wrist_pose is not None:
+            wrist_pose = self._last_wrist_pose
+        else:
+            self._last_stream_seq = stream_seq
+            wrist_pose = self.wrist_tracker.process_frame(
+                color_bgr=color,
+                depth_m=depth,
+                intrinsics=self.intrinsics,
+                table_calib=self.calib_data,
+                timestamp=t_now,
+            )
+            self._last_wrist_pose = wrist_pose
         imu_reading = self.imu_stream.read() if self.imu_stream is not None else ImuReading()
 
         # 2. Hand Retargeting
@@ -402,13 +470,22 @@ class TeleopSimCompositeNode(Node):
         else:
             # Normal teleoperation
             if wrist_pose.tracking_state == TrackingState.TRACKING and wrist_pose.position_table is not None:
-                if self.auto_engage and self.clutch.state == ClutchState.DISENGAGED and self.clutch._human_anchor is None:
+                if (
+                    self.auto_engage
+                    and self.clutch.state in (
+                        ClutchState.DISENGAGED,
+                        ClutchState.SAFE_HOLD,
+                        ClutchState.SAFE_RETRACTING,
+                    )
+                ):
                     self.clutch.engage(
                         current_human_pos=wrist_pose.position_table,
-                        current_robot_pos=self.home_pos,
+                        current_robot_pos=cur_arm_p,
                         current_human_rot=wrist_pose.orientation_table_matrix,
-                        current_robot_rot=self.home_R,
+                        current_robot_rot=cur_arm_R,
                     )
+                    if self.safety_report.level in (SafetyLevel.FROZEN, SafetyLevel.RETRACTING):
+                        self.safety_supervisor.reset()
                     if imu_reading.is_valid and not self.wrist_imu_tracker.is_calibrated:
                         self.wrist_imu_tracker.zero(imu_reading)
                 target_pos = self.clutch.compute_target(wrist_pose.position_table, fallback_robot_pos=self.home_pos)
@@ -461,6 +538,17 @@ class TeleopSimCompositeNode(Node):
         hand_msg.position = hand_cmd.target_q.tolist()
         self.hand_cmd_pub.publish(hand_msg)
 
+        # Broadcast 22-DOF command to local UDP bus (bridges Conda/ROS environments)
+        try:
+            import struct
+            q_22 = np.zeros(22, dtype=np.float32)
+            q_22[:6] = arm_cmd.target_q[:6]
+            q_22[6:22] = hand_cmd.target_q[:16]
+            pkt = struct.pack("<4s22f", b"TD22", *q_22)
+            self._udp_sock.sendto(pkt, self._udp_dest)
+        except Exception:
+            pass
+
         # 6. Step physics simulation if enabled
         if self.use_sim and self.sim_adapter is not None:
             composite_cmd = TeleopCommand(
@@ -495,6 +583,165 @@ class TeleopSimCompositeNode(Node):
                 s_hand.name = list(CANONICAL_JOINT_NAMES)
                 s_hand.position = self.latest_obs.hand_actual_q.tolist()
                 self.hand_state_pub.publish(s_hand)
+
+        # 7. Render OpenCV Telemetry HUD if gui is enabled
+        if self.gui:
+            import cv2
+            from .perception.wrist_tracker import draw_wrist_hud
+            from .ui.teleop_hud import draw_simulation_hud
+
+            t_step = time.time()
+            fps = max(1.0, 1.0 / (t_step - self.last_step_time)) if (t_step > self.last_step_time) else self.publish_rate_hz
+            self.last_step_time = t_step
+
+            hud_cam = draw_wrist_hud(color, wrist_pose, self.intrinsics)
+            dashboard = draw_simulation_hud(
+                camera_view=hud_cam,
+                clutch=self.clutch,
+                orientation_mode=self.current_orientation_mode,
+                arm_cmd=arm_cmd,
+                hand_cmd=hand_cmd,
+                obs=self.latest_obs,
+                forces=self.contact_forces,
+                arm_metrics=self.arm_ik.get_metrics(),
+                hand_metrics=self.hand_retargeter.metrics,
+                fps=fps,
+                imu_reading=imu_reading,
+                imu_tracker=self.wrist_imu_tracker,
+                safety_report=self.safety_report,
+                toast=self.hotkeys.active_toast(time.time()),
+            )
+            cv2.imshow("TuinaDex 22-DOF Teleoperation HUD", dashboard)
+            key = cv2.waitKey(1) & 0xFF
+            if key in (32, ord("c")):
+                tot_f = self.contact_forces.get("total", 0.0)
+                if self.clutch.state != ClutchState.ENGAGED and tot_f > 40.0:
+                    self.get_logger().warn(f"无法接管: 接触力({tot_f:.1f}N)过大，请先脱离接触！")
+                else:
+                    cur_ee_p, cur_ee_R = self.arm_ik.forward_kinematics(self.latest_obs.arm_actual_q)
+                    self.clutch.toggle(
+                        current_human_pos=wrist_pose.position_table if wrist_pose.position_table is not None else None,
+                        current_robot_pos=cur_ee_p,
+                        current_human_rot=wrist_pose.orientation_table_matrix,
+                        current_robot_rot=cur_ee_R,
+                    )
+                    if self.clutch.state == ClutchState.ENGAGED and imu_reading.is_valid:
+                        self.wrist_imu_tracker.zero(imu_reading)
+            elif key in (ord("s"), ord("S")):
+                self.safety_supervisor.toggle_enabled()
+            elif key in (ord("a"), ord("A")):
+                self._handle_axis_cycle()
+            elif key in (ord("x"),):
+                self._handle_cycle_imu_axes(forward=True)
+            elif key in (ord("X"),):
+                self._handle_cycle_imu_axes(forward=False)
+            elif key in (ord("h"), ord("H")):
+                self._handle_home_pose()
+            elif key in (ord("m"), ord("M")):
+                self._handle_mode_cycle()
+            elif key in (ord("i"), ord("I")):
+                self._handle_imu_zero(imu_reading)
+            elif key in (ord("z"), ord("Z")):
+                self._handle_hand_zero(wrist_pose)
+
+    # ---------------- W9 hotkey handlers ----------------
+    def _hotkey_guard(self) -> tuple[bool, str]:
+        """I40: no abrupt mapping/zero changes during engaged high-speed motion."""
+        from .perception.imu_stream import hotkey_allowed
+
+        speed = 0.0
+        if self.latest_obs is not None:
+            speed = float(np.linalg.norm(self.latest_obs.arm_actual_dq))
+        return hotkey_allowed(self.clutch.state, speed)
+
+    def _notify_hotkey(self, text: str) -> None:
+        self.get_logger().info(f"[HOTKEY] {text}")
+        self.hotkeys.toast_now(text, time.time(), 1.0)
+
+    def _handle_axis_cycle(self) -> None:
+        from .perception.imu_stream import cycle_axis_mapping
+
+        allowed, reason = self._hotkey_guard()
+        if not allowed:
+            self._notify_hotkey(reason)
+            return
+        mapping = cycle_axis_mapping(self.clutch.axis_mapping_str)
+        self.clutch.set_axis_mapping(mapping)
+        self.axis_mapping = mapping
+        self.hotkeys.axis_mapping = mapping
+        self._notify_hotkey(f"PosAxis -> {mapping}")
+
+    def _handle_cycle_imu_axes(self, forward: bool = True) -> None:
+        allowed, reason = self._hotkey_guard()
+        if not allowed:
+            self._notify_hotkey(reason)
+            return
+        mapping, idx, total = self.wrist_imu_tracker.cycle_axis_mapping(forward=forward)
+        self.imu_axis_mapping = mapping
+        self._notify_hotkey(f"IMUAxis [{idx}/{total}] -> {mapping}")
+
+    def _handle_swap_imu_axes(self) -> None:
+        self._handle_cycle_imu_axes(forward=True)
+
+    def _handle_home_pose(self) -> None:
+        self.clutch.disengage()
+        self.arm_ik.reset()
+        self.hand_retargeter.reset()
+        if self.use_sim and self.sim_adapter is not None:
+            now = time.monotonic()
+            home_arm = TeleopArmCommand(
+                timestamp=now,
+                target_pose=np.eye(4),
+                target_q=DEFAULT_READY_ARM_Q.copy(),
+            )
+            home_hand = TeleopHandCommand(
+                timestamp=now,
+                target_q=np.zeros(16, dtype=np.float32),
+            )
+            cmd = TeleopCommand(
+                timestamp=now,
+                arm_command=home_arm,
+                hand_command=home_hand,
+                clutch_state=ClutchState.DISENGAGED,
+            )
+            self.sim_adapter.send_command(cmd)
+        self._notify_hotkey("一键回初始姿态: 臂手已复位至就绪位姿")
+
+    def _handle_mode_cycle(self) -> None:
+        from .perception.imu_stream import cycle_orientation_mode
+
+        allowed, reason = self._hotkey_guard()
+        if not allowed:
+            self._notify_hotkey(reason)
+            return
+        self.current_orientation_mode = cycle_orientation_mode(
+            self.current_orientation_mode
+        )
+        self.hotkeys.orientation_mode = self.current_orientation_mode
+        self._notify_hotkey(f"Mode -> {self.current_orientation_mode.name}")
+
+    def _handle_imu_zero(self, imu_reading) -> None:
+        allowed, reason = self._hotkey_guard()
+        if not allowed:
+            self._notify_hotkey(reason)
+            return
+        if self.no_imu:
+            self._notify_hotkey("IMU功能未启用(no_imu=true)，如需启用请去除参数启动")
+            return
+        if imu_reading is not None and imu_reading.is_valid:
+            self.wrist_imu_tracker.zero(imu_reading)
+            self._notify_hotkey("IMU 零位已重置")
+        else:
+            self.wrist_imu_tracker.zero(None)
+            self._notify_hotkey("IMU 无有效读数 (串口数据流未就绪)")
+
+    def _handle_hand_zero(self, wrist_pose) -> None:
+        allowed, reason = self._hotkey_guard()
+        if not allowed:
+            self._notify_hotkey(reason)
+            return
+        self.hand_retargeter.zero(wrist_pose)
+        self._notify_hotkey("手部零位已校准")
 
     def _load_session_calibration(self, path: Path) -> Optional[dict]:
         """Load session calibration YAML."""

@@ -23,10 +23,12 @@ def generate_launch_description():
         DeclareLaunchArgument('no_imu', default_value='false', description='Disable IMU attitude tracking'),
         DeclareLaunchArgument('no_safety', default_value='false', description='Bypass safety guardrails'),
         DeclareLaunchArgument('auto_engage', default_value='true', description='Auto-engage clutch when hand is seen'),
-        DeclareLaunchArgument('publish_rate_hz', default_value='30.0', description='Publishing frequency in Hz'),
+        DeclareLaunchArgument('publish_rate_hz', default_value='60.0', description='Publishing frequency in Hz'),
+        DeclareLaunchArgument('camera_fps', default_value='0', description='Camera FPS (0 = auto: 60 on USB3, 30 on USB2)'),
         DeclareLaunchArgument('axis_mapping', default_value='-y,+x,+z', description='Human wrist to robot pos mapping'),
         DeclareLaunchArgument('imu_axis_mapping', default_value='+x,+y,+z', description='IMU to robot attitude mapping'),
         DeclareLaunchArgument('solver_mode', default_value='hybrid', description='Hand retargeting solver mode'),
+        DeclareLaunchArgument('gui', default_value='true', description='Open OpenCV tracking HUD window'),
 
         Node(
             package='tuinadex_teleop',
@@ -46,9 +48,11 @@ def generate_launch_description():
                 'no_safety': LaunchConfiguration('no_safety'),
                 'auto_engage': LaunchConfiguration('auto_engage'),
                 'publish_rate_hz': LaunchConfiguration('publish_rate_hz'),
+                'camera_fps': LaunchConfiguration('camera_fps'),
                 'axis_mapping': LaunchConfiguration('axis_mapping'),
                 'imu_axis_mapping': LaunchConfiguration('imu_axis_mapping'),
                 'solver_mode': LaunchConfiguration('solver_mode'),
+                'gui': LaunchConfiguration('gui'),
             }],
         ),
     ])

@@ -138,8 +138,12 @@ def run_hub_session(args, config: RobotConfig):
         use_videos=True,
     )
     collector = TuinaCollector(env=None)
+    from tuinadex_teleop.adapters import DEFAULT_READY_ARM_Q
+    init_q = np.zeros(config.action_dim, dtype=np.float32)
+    if config.action_dim >= 6:
+        init_q[:6] = DEFAULT_READY_ARM_Q.copy()
     commanded = {
-        "q": np.zeros(config.action_dim, dtype=np.float32)
+        "q": init_q
     }
 
     adapter = None
@@ -175,6 +179,125 @@ def run_hub_session(args, config: RobotConfig):
             env, action_supplier=lambda: commanded["q"]
         )
 
+    sub_node = None
+    home_pub = None
+    bridge_proc = None
+    stop_rx = threading.Event()
+    _cmd_rx_count = 0
+
+    # 1. Fast UDP command listener (seamless across Python 3.10 & 3.14)
+    import socket, struct, subprocess
+
+    def _udp_rx_worker():
+        nonlocal _cmd_rx_count
+        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        try:
+            sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            sock.bind(("127.0.0.1", 9876))
+            sock.settimeout(0.5)
+            while not stop_rx.is_set():
+                try:
+                    data, _ = sock.recvfrom(128)
+                    if len(data) >= 92 and data[:4] == b"TD22":
+                        q_vals = struct.unpack("<4s22f", data)[1:]
+                        with lock:
+                            commanded["q"] = np.array(q_vals, dtype=np.float32)
+                            _cmd_rx_count += 1
+                            if _cmd_rx_count == 1:
+                                print(
+                                    "[INFO] >>> First teleop command received via UDP! Simulation is now tracking teleop hand commands in real-time. <<<",
+                                    flush=True,
+                                )
+                except socket.timeout:
+                    continue
+                except Exception:
+                    break
+        finally:
+            sock.close()
+
+    udp_th = threading.Thread(target=_udp_rx_worker, daemon=True)
+    udp_th.start()
+
+    # 2. Native ROS 2 subscription or auto-spawned bridge
+    try:
+        import rclpy
+        from sensor_msgs.msg import JointState
+        if not rclpy.ok():
+            rclpy.init()
+        sub_node = rclpy.create_node("collect_teleop_cmd_sub")
+
+        def _arm_cmd_cb(msg: JointState):
+            nonlocal _cmd_rx_count
+            with lock:
+                if len(msg.position) >= 6:
+                    commanded["q"][:6] = np.array(msg.position[:6], dtype=np.float32)
+                    _cmd_rx_count += 1
+                    if _cmd_rx_count == 1:
+                        print("[INFO] >>> First /arm/joint_command received! Simulation is now tracking teleop hand commands in real-time. <<<", flush=True)
+
+        def _hand_cmd_cb(msg: JointState):
+            with lock:
+                if len(msg.position) >= 16:
+                    commanded["q"][6:22] = np.array(msg.position[:16], dtype=np.float32)
+
+        sub_node.create_subscription(JointState, "/arm/joint_command", _arm_cmd_cb, 10)
+        sub_node.create_subscription(JointState, "/hand/joint_command", _hand_cmd_cb, 10)
+        from std_msgs.msg import Empty
+        home_pub = sub_node.create_publisher(Empty, "/teleop/home", 10)
+        spin_thread = threading.Thread(target=rclpy.spin, args=(sub_node,), daemon=True)
+        spin_thread.start()
+        logger.info("Connected to ROS 2 command topics (/arm/joint_command, /hand/joint_command, /teleop/home)")
+    except Exception as exc:
+        logger.info(f"Direct rclpy unavailable ({exc}); auto-launching background ROS 2 bridge via system python...")
+        try:
+            bridge_script = str(ROOT / "scripts" / "ros2_teleop_bridge.py")
+            bridge_proc = subprocess.Popen(
+                ["/usr/bin/python3", bridge_script],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            logger.info("Background ROS 2 teleop bridge started successfully.")
+        except Exception as b_exc:
+            logger.warning(f"Could not spawn ros2_teleop_bridge: {b_exc}")
+
+    def _do_home():
+        with lock:
+            if hasattr(config, "action_dim") and config.action_dim >= 22:
+                from tuinadex_teleop.adapters import DEFAULT_READY_ARM_Q
+                commanded["q"][:6] = DEFAULT_READY_ARM_Q.copy()
+                commanded["q"][6:22] = 0.0
+            if adapter is not None:
+                from tuinadex_teleop.adapters import DEFAULT_READY_ARM_Q
+                now = time.monotonic()
+                cmd = TeleopCommand(
+                    timestamp=now,
+                    arm_command=TeleopArmCommand(
+                        timestamp=now,
+                        target_pose=np.eye(4),
+                        target_q=DEFAULT_READY_ARM_Q.copy(),
+                    ),
+                    hand_command=TeleopHandCommand(
+                        timestamp=now,
+                        target_q=np.zeros(16, dtype=np.float32),
+                    ),
+                    clutch_state=ClutchState.DISENGAGED,
+                )
+                adapter.send_command(cmd)
+        # Send UDP HOME trigger to teleop nodes
+        try:
+            h_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            h_sock.sendto(b"HOME", ("127.0.0.1", 9877))
+            h_sock.close()
+        except Exception:
+            pass
+        if sub_node is not None and home_pub is not None:
+            try:
+                from std_msgs.msg import Empty
+                home_pub.publish(Empty())
+            except Exception as e:
+                logger.debug(f"Failed to publish /teleop/home: {e}")
+        logger.info("[HOME] Robot returned to initial ready posture")
+
     controller = DataHubController(
         channel,
         collector,
@@ -184,6 +307,7 @@ def run_hub_session(args, config: RobotConfig):
     controller.on_save = lambda episode: writer.save_episode(
         episode, task=args.task
     )
+    controller.on_home = _do_home
 
     server = CollectionHubServer(
         controller, host=args.host, port=args.port
@@ -206,9 +330,11 @@ def run_hub_session(args, config: RobotConfig):
         while True:
             if args.env == "sim":
                 if args.mock_teleop:
-                    commanded["q"] = _mock_action(config, tick)
+                    with lock:
+                        commanded["q"] = _mock_action(config, tick)
                 tick += 1
-                q = commanded["q"]
+                with lock:
+                    q = commanded["q"].copy()
                 now = time.monotonic()
                 command = TeleopCommand(
                     timestamp=now,
@@ -244,6 +370,15 @@ def run_hub_session(args, config: RobotConfig):
     except KeyboardInterrupt:
         logger.info("Hub session interrupted by user.")
     finally:
+        stop_rx.set()
+        if bridge_proc is not None:
+            try:
+                bridge_proc.terminate()
+                bridge_proc.wait(timeout=1.0)
+            except Exception:
+                pass
+        if sub_node is not None:
+            sub_node.destroy_node()
         server.stop()
         controller.shutdown()
         writer.close()

@@ -25,6 +25,7 @@ class HubAction(str, Enum):
     SAVE = "save"
     DISCARD = "discard"
     LABEL = "label"
+    HOME = "home"
 
 
 class DataHubController:
@@ -70,10 +71,12 @@ class DataHubController:
         self._dropped = 0
         self._stale_streak = 0
         self._save_errors = 0
+        self._last_save_error: str | None = None
         self._last_abort_reason: str | None = None
         self._last_telemetry: dict = {}
 
         self.on_save: Callable[[EpisodeBuffer], None] | None = None
+        self.on_home: Callable[[], None] | None = None
         self.collector.on_save = self._enqueue_save
 
     def submit(self, action: str, payload: dict | None = None) -> dict:
@@ -105,6 +108,7 @@ class DataHubController:
                 "saved": self.collector.total_episodes_saved,
                 "discarded": self.collector.total_episodes_discarded,
                 "save_errors": self._save_errors,
+                "last_save_error": self._last_save_error,
                 "telemetry": self._last_telemetry,
             }
 
@@ -161,6 +165,12 @@ class DataHubController:
             self._finish_episode(save=True)
         elif action is HubAction.DISCARD:
             self._finish_episode(save=False)
+        elif action is HubAction.HOME:
+            if self.on_home is not None:
+                try:
+                    self.on_home()
+                except Exception:
+                    logger.exception("on_home callback failed")
         elif action is HubAction.LABEL:
             if "phase_label" in payload:
                 self._phase_label = str(payload["phase_label"])
@@ -186,8 +196,9 @@ class DataHubController:
         if save and len(buffer) > 0:
             issues = buffer.validate_continuity(
                 max_gap_s=max(
-                    1.5 / self.control_fps,
+                    0.20,
                     self.max_staleness_s,
+                    3.0 / self.control_fps,
                 )
             )
             if issues:
@@ -275,10 +286,17 @@ class DataHubController:
             try:
                 if self.on_save is not None:
                     self.on_save(episode)
-            except Exception:  # noqa: BLE001 - writer failure is isolated
+                with self._lock:
+                    self._last_save_error = None
+            except Exception as exc:  # noqa: BLE001 - writer failure is isolated
                 logger.exception("Episode save failed")
                 with self._lock:
                     self._save_errors += 1
+                    self._last_save_error = str(exc)
+                    if hasattr(self.collector, "total_episodes_saved") and self.collector.total_episodes_saved > 0:
+                        self.collector.total_episodes_saved -= 1
+                    if hasattr(self.collector, "total_episodes_discarded"):
+                        self.collector.total_episodes_discarded += 1
             finally:
                 with self._lock:
                     self.collector.notify_save_complete()

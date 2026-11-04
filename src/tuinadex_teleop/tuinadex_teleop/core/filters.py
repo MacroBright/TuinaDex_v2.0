@@ -40,16 +40,18 @@ class OneEuroFilter:
     def __init__(
         self,
         n_dim: int = 3,
-        freq_hz: float = 30.0,
-        min_cutoff: float = 1.0,
-        beta: float = 0.05,
-        d_cutoff: float = 1.0,
+        freq_hz: float = 60.0,
+        min_cutoff: float = 0.8,
+        beta: float = 0.06,
+        d_cutoff: float = 1.2,
+        deadband: float = 0.0,
     ):
         self.n_dim = n_dim
         self.freq_hz = freq_hz
         self.min_cutoff = min_cutoff
         self.beta = beta
         self.d_cutoff = d_cutoff
+        self.deadband = deadband
 
         self._x_filter = LowPassFilter()
         self._dx_filter = LowPassFilter()
@@ -72,7 +74,7 @@ class OneEuroFilter:
             rate_hz = self.freq_hz
         else:
             dt = timestamp - self._last_time
-            rate_hz = 1.0 / dt if dt > 1e-5 else self.freq_hz
+            rate_hz = np.clip(1.0 / dt, 1.0, 240.0) if dt > 1e-5 else self.freq_hz
         self._last_time = timestamp
 
         # Estimate derivative dx
@@ -88,7 +90,61 @@ class OneEuroFilter:
         # Dynamic cutoff frequency based on speed
         cutoff = self.min_cutoff + self.beta * np.abs(edx)
         alpha = self._calc_alpha(rate_hz, cutoff)
-        return self._x_filter.filter(x, alpha=alpha)
+        filtered = self._x_filter.filter(x, alpha=alpha)
+
+        # Deadband threshold for micro-jitter suppression during static rests
+        if prev_x is not None and self.deadband > 0.0:
+            delta = np.abs(filtered - prev_x)
+            filtered = np.where(delta < self.deadband, prev_x, filtered)
+            self._x_filter._y = filtered.copy()
+
+        return filtered
+
+
+class LandmarkOneEuroFilter:
+    """Specialized 1€ Filter for (N, 3) 3D Hand Landmarks with outlier velocity clamping."""
+
+    def __init__(
+        self,
+        num_landmarks: int = 21,
+        freq_hz: float = 60.0,
+        min_cutoff: float = 1.2,
+        beta: float = 0.03,
+        d_cutoff: float = 1.2,
+        max_jump_m: float = 0.12,
+    ):
+        self.num_landmarks = num_landmarks
+        self.max_jump_m = max_jump_m
+        self._filter = OneEuroFilter(
+            n_dim=num_landmarks * 3,
+            freq_hz=freq_hz,
+            min_cutoff=min_cutoff,
+            beta=beta,
+            d_cutoff=d_cutoff,
+        )
+        self._last_pts: Optional[np.ndarray] = None
+
+    def reset(self) -> None:
+        self._filter.reset()
+        self._last_pts = None
+
+    def filter(self, pts: np.ndarray, timestamp: Optional[float] = None) -> np.ndarray:
+        pts = np.asarray(pts, dtype=np.float64)
+        orig_shape = pts.shape
+        flat = pts.reshape(-1)
+
+        # Outlier rejection: if a single point jumps > max_jump_m, clamp to previous point + max_jump
+        if self._last_pts is not None and self.max_jump_m > 0.0:
+            diff = pts - self._last_pts
+            dist = np.linalg.norm(diff, axis=-1, keepdims=True)
+            scale = np.where(dist > self.max_jump_m, self.max_jump_m / np.maximum(dist, 1e-6), 1.0)
+            pts_clamped = self._last_pts + diff * scale
+            flat = pts_clamped.reshape(-1)
+
+        filtered_flat = self._filter.filter(flat, timestamp=timestamp)
+        filtered_pts = filtered_flat.reshape(orig_shape)
+        self._last_pts = filtered_pts.copy()
+        return filtered_pts
 
 
 def slerp(q0: np.ndarray, q1: np.ndarray, t: float) -> np.ndarray:

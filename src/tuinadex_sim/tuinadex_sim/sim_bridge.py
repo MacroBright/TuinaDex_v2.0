@@ -20,7 +20,8 @@ try:
 except ImportError:
     mujoco = None
 
-DEFAULT_READY_ARM_Q = np.array([0.0, 0.85, 0.95, -0.80, 0.0, 0.0], dtype=np.float64)
+# 默认推拿准备姿态 (机械臂 6 关节角度: 掌面平行朝下悬停，Palm Z=0.981m)
+DEFAULT_READY_ARM_Q = np.array([0.0, 1.400, 1.230, -1.400, 0.0, 0.0], dtype=np.float64)
 
 
 @dataclass

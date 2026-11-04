@@ -29,18 +29,18 @@ STANDARD_CAMERA_SPECS: dict[str, CameraSpec] = {
         name="overhead",
         mjcf_name="overhead_cam",
         mount_type=CameraMountType.EYE_TO_HAND,
-        fovy=60.0,
+        fovy=68.0,
     ),
     "wrist": CameraSpec(
         name="wrist",
         mjcf_name="wrist_cam",
         mount_type=CameraMountType.EYE_IN_HAND,
-        fovy=75.0,
+        fovy=80.0,
     ),
     "side": CameraSpec(
         name="side",
         mjcf_name="side_cam",
         mount_type=CameraMountType.EYE_TO_HAND,
-        fovy=45.0,
+        fovy=52.0,
     ),
 }

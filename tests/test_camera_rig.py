@@ -33,9 +33,9 @@ def _load_scene():
 def test_camera_specs_are_standard():
     assert set(STANDARD_CAMERA_SPECS) == {"overhead", "wrist", "side"}
     expected = {
-        "overhead": ("overhead_cam", CameraMountType.EYE_TO_HAND, 60.0),
-        "wrist": ("wrist_cam", CameraMountType.EYE_IN_HAND, 75.0),
-        "side": ("side_cam", CameraMountType.EYE_TO_HAND, 45.0),
+        "overhead": ("overhead_cam", CameraMountType.EYE_TO_HAND, 68.0),
+        "wrist": ("wrist_cam", CameraMountType.EYE_IN_HAND, 80.0),
+        "side": ("side_cam", CameraMountType.EYE_TO_HAND, 52.0),
     }
     for name, (mjcf_name, mount, fovy) in expected.items():
         spec = STANDARD_CAMERA_SPECS[name]

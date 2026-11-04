@@ -93,8 +93,8 @@ R_DOWNWARD_DEFAULT = np.array([
 ], dtype=np.float64)
 
 
-# Canonical downward posture (Tuina ready stance hovering safely above bed)
-DEFAULT_READY_ARM_Q = np.array([0.0, 0.85, 0.95, -0.80, 0.0, 0.0], dtype=np.float64)
+# Canonical downward posture (Tuina ready stance with parallel palm hovering safely above bed, Palm Z=0.981m)
+DEFAULT_READY_ARM_Q = np.array([0.0, 1.400, 1.230, -1.400, 0.0, 0.0], dtype=np.float64)
 
 
 class ArmIKSolver:
@@ -265,8 +265,8 @@ class ArmIKSolver:
             (is_near_limit, min_dist_rad, worst_joint_idx)
         """
         q_in = self.current_q if q is None else np.asarray(q, dtype=np.float64)
-        dist_min = q_in - self.q_min
-        dist_max = self.q_max - q_in
+        dist_min = q_in - self.model.lowerPositionLimit
+        dist_max = self.model.upperPositionLimit - q_in
         all_dists = np.minimum(dist_min, dist_max)
         worst_idx = int(np.argmin(all_dists))
         min_dist = float(all_dists[worst_idx])
@@ -502,6 +502,16 @@ class ArmIKSolver:
 
         dq_result = (q_cur - self.current_q) / max(1e-4, dt)
         return q_cur, dq_result, converged, it + 1
+
+    @property
+    def metrics(self) -> ArmIKMetrics:
+        """Return diagnostic metrics from the last IK solve."""
+        return self._last_metrics
+
+    @property
+    def last_metrics(self) -> ArmIKMetrics:
+        """Alias for metrics."""
+        return self._last_metrics
 
     def get_metrics(self) -> ArmIKMetrics:
         """Return the latest diagnostic telemetry."""

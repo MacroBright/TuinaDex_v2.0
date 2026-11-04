@@ -1,4 +1,4 @@
-# TuinaDex v2.0 — 中医推拿机械臂-灵巧手具身智能系统 (LEAP Hand MVP & MuJoCo Digital Twin)
+# TuinaDex v2.0 — 中医推拿机械臂-灵巧手具身智能系统 (LEAP Hand & reBot Arm 22-DOF Digital Twin)
 
 [![ROS2](https://img.shields.io/badge/ROS2-Lyrical%20%2F%20Humble-blue.svg)](https://docs.ros.org)
 [![Python](https://img.shields.io/badge/Python-3.10%20%7C%203.14-green.svg)](https://www.python.org/)
@@ -6,9 +6,9 @@
 [![LeRobot](https://img.shields.io/badge/LeRobot-v0.4.4-orange.svg)](https://github.com/huggingface/lerobot)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 
-TuinaDex 是面向中医推拿/理疗场景构建的具身智能机器人系统。
-当前阶段专注于 **6-DOF 机械臂 + 16-DOF LEAP Hand 灵巧手 (共 22-DOF)** 的高可靠软硬件与数字孪生闭环系统：
-`ROS2 运行时 / MuJoCo 仿真 -> 遥操作示教 -> rosbag2 数据记录 -> 离线对齐与校验 -> LeRobot 策略学习 -> ROS2 闭环部署`。
+TuinaDex 是面向中医推拿/理疗场景构建的高性能具身智能机器人系统。
+当前阶段实现了 **6-DOF 机械臂 + 16-DOF LEAP Hand 仿生灵巧手 (共 22-DOF)** 的软硬件高保真联合控制与全链路数字闭环：
+`ROS2 运行时 / MuJoCo 孪生 -> 60Hz 视-惯遥操作示教 -> Web UI 多模态数据采集 -> LeRobotDataset v3.0 转换 -> 具身策略学习 (SmolVLA/ACT) -> 闭环部署`。
 
 ---
 
@@ -17,246 +17,178 @@ TuinaDex 是面向中医推拿/理疗场景构建的具身智能机器人系统�
 本项目全面推行**测试驱动开发 (TDD)** 与**分层架构防破坏准则**。
 无论是人类开发者还是 AI 编码助手（Claude Code, Cursor, Codex, Windsurf, Copilot, Antigravity），在新增模块、修改代码或发起 Pull Request 前，**必须阅读并严格遵守 [`AGENTS.md`](AGENTS.md)**：
 
-- **核心不变量**：SI 弧度制（0 rad 全开基准）、22 维绝对关节位置动作空间（禁止增量 delta）、300ms 安全看门狗平滑阻尼回退；
+- **黄金不变量**：SI 弧度制（0 rad 全开基准）、22 维绝对关节位置动作空间（严禁增量 delta）、300ms 安全看门狗阻尼平滑回退；
 - **五层架构契约**：Layer 1 硬件/物理孪生 $\rightarrow$ Layer 2 驱动/仿真桥 $\rightarrow$ Layer 3 安全控制内核 $\rightarrow$ Layer 4 ROS2 中间件/Hub $\rightarrow$ Layer 5 VLA 策略（严禁跨层调用，严格单一事实源 SSOT）；
 - **环境准入门禁**：使用 `source scripts/activate_tuinadex.sh [control|vla]` 局部切换环境，依赖变更必须跑通 `bash scripts/verify_all_envs.sh`；
 - **团队协作工作流**：遵循 GitHub Flow 分支管理、Conventional Commits 提交规范以及本地四重门禁验证（环境、构建、单测、E2E）。
 
 ---
 
-## 1. 系统架构与数据流图 (Architecture & Dataflow)
+## 1. 系统架构与多模态数据流 (System Architecture)
 
 ```mermaid
 flowchart TD
-    subgraph Teleoperation ["遥操作与手势捕捉 (tuinadex_teleop)"]
-        Cam["RGB 相机"] --> Tracker["MediaPipe 手势追踪器 (21 Keypoints)"]
-        Tracker --> Gate["利手过滤 (Handedness Gate)"]
-        Gate --> Filter["OneEuroFilter 抖动滤波"]
-        Filter --> Mapper["JointMapper (几何解算)"]
-        Mapper --> TeleopNode["TeleopNode 发布 50Hz 目标指令"]
+    subgraph Teleop ["视-惯正交遥操作系统 (tuinadex_teleop, 60Hz)"]
+        Cam["Intel RealSense D455"] --> Tracker["WristTracker (空间三维定位)"]
+        IMU["6 轴腕部惯导 (CH340)"] --> ImuTracker["WristImuTracker (姿态解算)"]
+        Tracker & ImuTracker --> Clutch["ClutchController (相对增量离合)"]
+        Clutch --> IK["Pink QP-IK 机械臂逆解"]
+        Cam --> HandRetarget["HandRetargeter (16-DOF 几何重定向)"]
+        IK & HandRetarget --> SafetyGate["SafetySupervisor (4 级安全门限守护)"]
+        SafetyGate --> Bridge["UDP 零延迟直通桥 (:9876)"]
+        SafetyGate --> TeleopNode["ROS 2 话题发布 (60Hz)"]
     end
 
-    subgraph Core ["核心安全与共享逻辑 (tuinadex_core)"]
-        TeleopNode -->|"/hand/joint_command (JointState)"| Align["align_command (Canonical 重排 + 限位门)"]
-        Align --> FSM{"WatchdogStateMachine\n(FOLLOWING / RELAXING)"}
+    subgraph Core ["控制与安全内核 (tuinadex_core, 纯 Python)"]
+        TeleopNode -->|"/joint_command"| Align["align_command (Canonical 重排 + 限位饱和门)"]
+        Align --> FSM{"WatchdogStateMachine\n(300ms 超时裁决)"}
         FSM --> RouteSwitch{"模式路由选择\n(use_sim:=true/false)"}
     end
 
-    subgraph RealRuntime ["分支 A: 物理硬件执行体 (tuinadex_hand, use_sim:=false)"]
-        RouteSwitch -->|Real / Mock| LeapDriver["Dynamixel Protocol 2.0 (4Mbps, 150mA)"]
-        LeapDriver --> RealHand["16-DOF LEAP Hand 实体舵机"]
-        RealHand --> RealStatePub["LeapHandNode 发布 50Hz 实测状态"]
+    subgraph RealRuntime ["分支 A: 物理硬件执行体 (tuinadex_hand / tuinadex_arm)"]
+        RouteSwitch -->|Real / Mock| Drivers["Dynamixel Protocol 2.0 (4Mbps, 150mA)\nSocketCAN (1Mbps, RobStride)"]
+        Drivers --> RealRobot["22-DOF 臂手物理实体"]
+        RealRobot --> RealStatePub["50Hz 实测物理状态反馈"]
     end
 
-    subgraph SimRuntime ["分支 B: MuJoCo 数字孪生执行体 (tuinadex_sim, use_sim:=true)"]
-        RouteSwitch -->|Sim| SimCore["SimulationCore (Hold+Ramp 回退)"]
-        SimCore --> MuJoCoBridge["MujocoSimBridge (10x 0.002s 子步进)"]
-        MuJoCoBridge --> Scene["推拿床与人体背部假人刚体世界 (tuina_scene)"]
-        Scene --> SimStatePub["LeapHandSimNode 发布 50Hz 仿真状态"]
+    subgraph SimRuntime ["分支 B: MuJoCo 动力学孪生体 (tuinadex_sim)"]
+        RouteSwitch -->|Sim| SimCore["SimulationCore (Hold+Ramp 阻尼回位)"]
+        SimCore --> MuJoCoBridge["MujocoSimBridge (500Hz 物理子步积分)"]
+        MuJoCoBridge --> Scene["推拿床与人体背部假人刚体孪生世界 (tuina_scene)"]
+        Scene --> SimStatePub["50Hz 仿真动力学状态反馈"]
     end
 
-    subgraph Bus ["统一 ROS 2 话题总线 (Topic Parity)"]
-        RealStatePub --> JointStates["/hand/joint_states (sensor_msgs/JointState)"]
+    subgraph Bus ["ROS 2 统一话题总线 (Topic Parity)"]
+        RealStatePub --> JointStates["/arm/joint_states & /hand/joint_states"]
         SimStatePub --> JointStates
     end
 
-    subgraph Recorder ["示教数据采集 (tuinadex_recorder)"]
-        JointStates --> BagRec["RecorderNode (rosbag2_py 进程内写入)"]
-        TeleopNode -.->|"/hand/joint_command"| BagRec
-        SrvCtrl["Trigger 服务 (/recorder/start & /stop)"] --> BagRec
-        BagRec --> RawBag[("rosbag2 原始事实源 (sqlite3/db3)")]
-    end
-
-    subgraph OfflinePipeline ["离线数据适配器 (tuinadex_dataset)"]
-        RawBag --> BagReader["bag_reader (反序列化双话题)"]
-        BagReader --> Sync["TimeSynchronizer (50Hz 时间网格插值对齐)"]
-        Sync --> Validator{"DatasetValidator\n(SPEC_JOINT_LIMITS 校验)"}
-        Validator -->|Pass| Adapter["adapter.save_to_lerobot"]
-        Adapter --> LeRobotDS[("LeRobotDataset (v3.0 Parquet)")]
-    end
-
-    subgraph Policy ["策略学习与推理 (LeRobot / SmolVLA)"]
-        LeRobotDS --> Train["离线模仿学习 / 策略训练"]
-        Train --> PolicyNode["ROS2 推理部署节点"]
-        PolicyNode -.->|"/hand/joint_command"| Align
+    subgraph CollectionHub ["多模态数据采集工作台 (Web UI Hub, 端口 8080)"]
+        Bridge -.->|UDP :9876| Collector["TuinaCollector / DataHubController"]
+        JointStates -.->|ROS 2| Collector
+        Cams["三机位独立 EGL 渲染\n(overhead, wrist, side)"] --> Collector
+        Collector --> HubUI["零依赖 Web UI 监视工作台 (http://127.0.0.1:8080)"]
+        Collector --> RawBag[("rosbag2 原始事实源 (sqlite3)")]
+        Collector --> LeRobotDS[("LeRobotDataset v3.0\n(H.264 视频流 + Parquet 特征)")]
     end
 ```
 
 ---
 
-## 2. 核心技术规范与架构不变量 (Invariants)
+## 2. 核心架构不变量与设计准则 (Invariants)
 
 1. **统一弧度制与零位契约 (Invariant 1)**:
-   - ROS2 接口与 LeRobot 数据集全链路强制 **SI 国际标准单位：弧度 (rad)**；
-   - 以实测标定后的 `OPEN_POSE`（全开平伸）为 **0 rad 基准零位**，手指各关节向内屈曲弯曲为正 ($q > 0$)。
-2. **Canonical 16-DOF 排序**:
-   - 顺序固定为：食指(侧摆/俯仰/近指/远指) 4DOF、中指 4DOF、无名指 4DOF、拇指(回转/俯仰/屈曲/指尖) 4DOF。
-   - 详见 [`docs/specs/LEAP_HAND_MVP_INTERFACE_SPEC.md`](docs/specs/LEAP_HAND_MVP_INTERFACE_SPEC.md)。
+   - 全链路强制 **SI 国际标准单位：弧度 (rad)**，角速度为 `rad/s`，力矩为 `N·m`，法向力为 `N`；
+   - 以实测标定后的 `OPEN_POSE`（全开平伸姿态）为 **0 rad 基准零位**，手指各关节向内屈曲弯曲为正 ($q > 0$)。
+2. **动作空间规范 (Invariant 2)**:
+   - 动作空间强制使用 **22 维（或 16 维单手模式）绝对关节位置 (Absolute Joint Position)**，严禁使用增量 delta。
 3. **话题完全等价性 (Invariant 13)**:
-   - 仿真主控 `leap_hand_sim_node` 与物理主控 `leap_hand_node` 对外完全共享 `/hand/joint_command` 与 `/hand/joint_states`；上层遥操、采集与策略节点零感知切换。
-4. **多速率时钟与物理步进解耦 (Invariants 14 & 16)**:
-   - MuJoCo 内部物理动力学以 500Hz (`dt = 0.002s`) 运行以保障接触积分稳定；
-   - ROS 2 仿真节点采用单线程 50Hz Timer，每 tick 内锁步执行 10 次子步进 (`10 x 0.002s = 20ms`)，发布端严格降采样至 50Hz，杜绝后台线程竞态。
-5. **共享纯逻辑下沉与无环依赖 (Invariant 17)**:
-   - `tuinadex_core` 承载 `align_command`、`JOINT_SPEC_LIMITS` 与 `WatchdogStateMachine`，彻底切断 `tuinadex_hand` 与 `tuinadex_sim` 循环依赖。
-6. **双模看门狗与平滑回退 (Invariants 15 & 18)**:
-   - 两端均内置 300ms Watchdog；失联时复刻 `0.3s hold + 0.6s ramp` 阻尼回退至全开平伸姿态 (`Relax-to-OPEN`)，杜绝机械冲击与仿真冲量发散。
+   - 仿真主控与物理真机对外完全共享 `/arm/joint_command`、`/hand/joint_command` 与 `/arm/joint_states`、`/hand/joint_states`；上层遥操、采集与策略节点零感知透明切换。
+4. **多速率时钟与动力学解耦 (Invariants 14 & 16)**:
+   - MuJoCo 内部物理动力学强制以 500Hz (`dt = 0.002s`) 步进以保障高刚度刚体接触稳定；
+   - ROS 2 仿真节点采用单线程 50Hz 定时器锁步执行 10 次子步进，发布端严格降采样至 50Hz，杜绝后台多线程竞态。
+5. **硬件安全守护带 (Invariant 15)**:
+   - 灵巧手舵机工作电流硬件锁定为 **150mA**，杜绝堵转过热；
+   - 通信失联超过 **300ms** 时无条件触发看门狗平滑阻尼回退至安全平伸姿态 (`Relax-to-OPEN`)。
 
 ---
 
-## 3. 环境准备与多环境矩阵 (Environment Matrix)
+## 3. 功能包全景拓扑与文档索引 (Monorepo Packages)
 
-由于 Ubuntu 26.04 系统 ROS2 (Lyrical Luth / Python 3.14) 与 LeRobot (Python 3.10) 的环境隔离要求，本项目采用分层环境矩阵：
-
-| 环境 | 路径 / 工具 | 适用模块 | 验证方式 |
+| 目录 / 功能包 | 架构层次 | 核心职责 | 详细文档 |
 | :--- | :--- | :--- | :--- |
-| **ROS2 主机环境** | `/opt/ros/lyrical/setup.bash` + `/usr/bin/python3` (MuJoCo 3.13) | `tuinadex_core`, `tuinadex_hand`, `tuinadex_sim`, `tuinadex_recorder` 编译与 ROS2 集成测试 | `colcon build`, `pytest tests/test_leap_hand_node_integration.py tests/test_sim_node_integration.py` |
-| **日常控制基座环境 (tuinadex-control)** | `~/win_office/conda/envs/tuinadex-control/bin/python` (Python 3.10.20) | 6-DOF 臂、16-DOF 手驱动、MuJoCo 动力学、Co_Teleop 视觉遥操 (MediaPipe/OpenCV/RealSense) | `python -m pytest tests/ -v` |
-| **具身学习与训练环境 (tuinadex-vla)** | `~/win_office/conda/envs/tuinadex-vla/bin/python` (Python 3.10.20 + CUDA 12.8) | `tuinadex_dataset` 离线保存与 Parquet 导出、SmolVLA/ACT 训练 | `python -m pytest tests/test_dataset_adapter.py -v` |
+| **`src/tuinadex_bringup/`** | **Layer 4** (Middleware) | 整机协同部署、Launch 编排与统一 `tuina` CLI 控制台 | [📖 README](src/tuinadex_bringup/README.md) |
+| **`src/tuinadex_teleop/`** | **Layer 4** (Middleware) | 60Hz 视-惯正交遥操作系统、三合一标定向导与 OpenCV HUD | [📖 README](src/tuinadex_teleop/README.md) |
+| **`src/tuinadex_recorder/`** | **Layer 4** (Middleware) | 基于 `rosbag2_py` 的原始数据事实源进程内高速录制节点 | [📖 README](src/tuinadex_recorder/README.md) |
+| **`src/tuinadex_core/`** | **Layer 3** (Control & Safety) | 纯 Python 控制算法、关节规范字典、安全限位门与 300ms 看门狗 | [📖 README](src/tuinadex_core/README.md) |
+| **`src/tuinadex_hand/`** | **Layer 2 & 1** (Driver/Hardware) | 16-DOF LEAP Hand 物理驱动、Dynamixel 4Mbps 串口与 150mA 硬限位 | [📖 README](src/tuinadex_hand/README.md) |
+| **`src/tuinadex_arm/`** | **Layer 2 & 1** (Driver/Hardware) | 6-DOF reBot 机械臂物理驱动、SocketCAN 1Mbps 通信与 URDF 资产 | [📖 README](src/tuinadex_arm/README.md) |
+| **`src/rebot_control/`** | **Layer 2** (Driver Layer) | reBot 机械臂底层电机通信库与 MIT 模式交互式调试 CLI | [📖 README](src/rebot_control/README.md) |
+| **`src/tuinadex_sim/`** | **Layer 2 & 1** (Simulation) | 22 维一体化 MuJoCo 动力学数字孪生、500Hz 物理步进与推拿床场景 | [📖 README](src/tuinadex_sim/README.md) |
+| **`data/`** | 训练就绪数据集产品库 | `data/tuina_demo` (52 试次, 50k 帧, 22D 臂手 + 3 机位 H.264 LeRobotDataset v3.0) | [📖 说明](dataset/tuinadex_dataset/README.md#3-实测基准数据集-datatuina_demo) |
+| **`dataset/tuinadex_dataset/`**| **Layer 5** (AI Policy Prep) | 离线时空对齐、数据校验与 Hugging Face LeRobotDataset v3.0 转换 | [📖 README](dataset/tuinadex_dataset/README.md) |
+| **`scripts/`** | 全局基础设施 | 环境激活、自动化 E2E 回归测试脚本、标定向导与数据采集 CLI | [📖 README](scripts/README.md) |
+| **`tests/`** | 全局质量防线 | 50+ 自动化单测文件、81 项遥操单测、33 项 Hub 单测与 ROS2 节点集成 | [📖 README](tests/README.md) |
+| **`docs/`** | 架构决策与规范 | 系统接口规范 (`specs/`)、设计决策 (`adrs/`) 与架构全景图 (`architecture/`) | [📖 README](docs/README.md) |
 
 ---
 
-## 4. 构建与快速上手 (Quickstart)
+## 4. 快速上手 (Quickstart)
 
-### 4.1 编译 ROS2 功能包 (8 包全量)
+### 4.1 统一 CLI 控制台启动 (极简免配置 · 推荐)
+仓库自带自动环境感知启动脚本 `./bin/tuina`（自动处理 Conda 环境、CycloneDDS 与动态链接库）：
+
+```bash
+cd /home/bright/win_office/ubantu_files/project/TuinaDex_v2.0
+
+# 1. 一键启动 22 维物理仿真并弹出 3D 视窗 (机械臂 + 灵巧手 + 推拿床假人)
+./bin/tuina launch --sim --gui
+
+# 2. 纯后台无头模式运行仿真 (适用于 CI、录制与自动化测试)
+./bin/tuina launch --sim --no-gui
+
+# 3. 启动真实物理机器人驱动 (SocketCAN + 串口)
+./bin/tuina launch --real --arm-channel can0 --hand-port /dev/ttyUSB0
+
+# 4. 启动起飞前三合一交互式标定向导 (桌面平面 + 手腕 IMU + 灵巧手活动度)
+./bin/tuina teleop calibrate
+
+# 5. 启动 22D 实时协同遥操预览 (Mock 离线体验，带 3D 物理画面与 OpenCV HUD)
+./bin/tuina teleop sim --mock
+
+# 6. 启动多模态 Web UI 采集工作台 (浏览器访问 http://localhost:8080)
+./bin/tuina collect hub --env sim --mode arm_hand
+
+# 7. 运行全链路采集端到端自检 (真实 EGL 离屏渲染 + H.264 导出)
+./bin/tuina collect check
+```
+
+---
+
+### 4.2 编译 ROS 2 完整工作空间
 ```bash
 source /opt/ros/lyrical/setup.bash
 colcon build --symlink-install
 source install/setup.bash
 ```
 
-### 4.2 臂手协同双模式一键启动 (Unified Dual-Mode Launch)
+---
 
-通过 `tuinadex_bringup` 提供的顶层统一入口 `robot.launch.py`，实现 6-DOF 臂与 16-DOF 手的协同调度：
+### 4.3 原生 Launch 编排启动 (`robot.launch.py`)
 
-#### 模式 1: 真实物理硬件 / Mock 驱动启动 (`use_sim:=false`)
+#### 模式 1: MuJoCo 数字孪生动力学仿真 (`use_sim:=true`)
 ```bash
-# 1. 22 维臂手协同真机启动 (连接 USB-TTL 串口与 SocketCAN can0)
-ros2 launch tuinadex_bringup robot.launch.py mode:=arm_hand use_sim:=false hand_port:=/dev/ttyUSB0 arm_channel:=can0
-
-# 2. 22 维脱机 Mock 安全回环启动 (CI 与无物理硬件调试推荐)
-ros2 launch tuinadex_bringup robot.launch.py mode:=arm_hand use_sim:=false mock:=true
-
-# 3. 单独启动 16 维灵巧手或 6 维机械臂
-ros2 launch tuinadex_bringup robot.launch.py mode:=hand_only mock:=true
-ros2 launch tuinadex_bringup robot.launch.py mode:=arm_only mock:=true
-```
-
-#### 模式 2: MuJoCo 数字孪生仿真启动 (`use_sim:=true`)
-```bash
-# 1. 启动 22 维协同数字孪生仿真并弹出 3D 渲染窗口
+# 启动 22 维协同 3D 物理仿真并弹出视窗 (机械臂 + 灵巧手 + 推拿床假人)
 ros2 launch tuinadex_bringup robot.launch.py mode:=arm_hand use_sim:=true gui:=true
 
-# 2. 纯后台无头模式运行 (Headless, 适用于自动化脚本与 CI)
-ros2 launch tuinadex_bringup robot.launch.py mode:=arm_hand use_sim:=true
+# 纯后台无头模式运行 (适用于 CI、录制与自动化测试)
+ros2 launch tuinadex_bringup robot.launch.py mode:=arm_hand use_sim:=true gui:=false
 ```
 
-#### 独立单手/单臂 Launch (兼容既有习惯)
+#### 模式 2: 真实物理机器人启动 (`use_sim:=false`)
+> [!CAUTION]
+> 实体上电前必须确认机械臂急停开关 (E-Stop) 就位，确认串口 `/dev/ttyUSB0` 与 CAN 接口 `can0` 通信正常！
+
 ```bash
-ros2 launch tuinadex_hand hand.launch.py use_sim:=true|false mock:=true
-ros2 launch tuinadex_arm arm.launch.py mock:=true
-ros2 launch tuinadex_teleop teleop.launch.py
+ros2 launch tuinadex_bringup robot.launch.py mode:=arm_hand use_sim:=false arm_channel:=can0 hand_port:=/dev/ttyUSB0
 ```
 
-### 4.3 自动化端到端回环验证 (E2E Checks)
-
-- **22 维臂手协同与双模式启动终验自检**:
-  ```bash
-  bash scripts/e2e_unified_robot_check.sh
-  ```
-  *验证指标: Mock 硬件启动、MuJoCo 仿真启动、22 维指令分发与状态聚合、300ms 看门狗联合回退、直通 LeRobotDataset v3.0 22 维多模态导出。*
-
-- **MuJoCo 仿真统一入口闭环自检**:
-  ```bash
-  bash scripts/e2e_sim_check.sh
-  ```
-  *验证指标: 50Hz 控制发布、MuJoCo 10 步/tick 积分、130+ 帧状态接收、周期中位数 19.97ms、物理收敛并平滑回退 OPEN。*
-
-- **Mock 驱动示教录制与数据集转换闭环自检**:
-  ```bash
-  bash scripts/e2e_mock_check.sh
-  ```
-  *验证指标: Mock 控制节点 + 示教录制 + 50Hz 离线时间对齐 + LeRobot Parquet 数据集落地。*
-
-- **多模态数据采集与 LeRobotDataset v3.0 闭环自检**:
-  ```bash
-  bash scripts/e2e_collection_check.sh
-  ```
-  *验证指标: 仿真环境、双目相机 (head, wrist) 视频流分块编码、50Hz 关节状态对齐、生成原生 LeRobotDataset v3.0 目录 (MP4 + Parquet)。*
-
-- **三机位 Web Hub 采集与 H.264 导出自检**:
-  ```bash
-  bash scripts/e2e_hub_collection_check.sh
-  ```
-  *验证指标: 真实 EGL 三路渲染、22D Mock 遥操、REST/SSE/MJPEG Hub、异步保存、三路 H.264 与 LeRobot v3.0 Parquet 产物。*
-
-### 4.4 多模态数据采集快速上手 (Data Collection Quickstart)
+#### 模式 3: 脱机安全 Mock 启动 (CI 与无物理硬件联调推荐)
 ```bash
-# 激活具身基座环境
-source scripts/activate_tuinadex.sh control
-
-# 1. 启动三机位 Web 采集 Hub（默认仅绑定 127.0.0.1）
-python scripts/collect_teleop_data.py --env sim --mode arm_hand --mock-teleop \
-  --hub --headless --port 8080 --repo-id data/hub_run
-
-# 2. 运行 16D 手部终端采集
-python scripts/collect_teleop_data.py --env sim --mode hand_only \
-  --cameras head,wrist --repo-id data/tuina_demo
-
-# 3. 一键切换至真机数据采集 (上层录制与 LeRobot 代码零改动)
-python scripts/collect_teleop_data.py --env real --mode hand_only \
-  --cameras head,wrist --repo-id data/tuina_real_demo
-```
-
-Hub 启动后 stdout 输出 `HUB_READY port=<n>`。浏览器打开
-`http://127.0.0.1:<n>` 即可查看 `overhead / wrist / side` 三路画面、
-22D 关节与 4 指接触力遥测，并通过 REST 命令完成
-`start / pause / resume / stop / save / discard / label` 操作。
-
-### 4.5 运行多矩阵单元测试
-```bash
-# 1. 基础逻辑、遥操映射与仿真桥接测试 (tuinadex-control 环境)
-~/win_office/conda/envs/tuinadex-control/bin/python -m pytest tests/ -v
-
-# 2. LeRobot 数据集适配器与学习模型测试 (tuinadex-vla 环境)
-~/win_office/conda/envs/tuinadex-vla/bin/python -m pytest tests/test_dataset_sync_validator.py tests/test_dataset_adapter.py -v
-
-# 3. ROS2 节点级集成与双模测试 (ROS2 主机环境)
-source /opt/ros/lyrical/setup.bash
-python3 -m pytest tests/test_leap_hand_node_integration.py tests/test_recorder_node.py tests/test_sim_node_integration.py -v
+ros2 launch tuinadex_bringup robot.launch.py mode:=arm_hand use_sim:=false mock:=true
 ```
 
 ---
 
-## 5. 项目结构 (Repository Structure)
+## 5. 质量门禁与自动化验证速查表
 
-```text
-TuinaDex_v2.0/
-├── docs/
-│   ├── specs/                   # 冻结的 16-DOF 接口与通信规范
-│   ├── adrs/                    # 架构决策记录 (ADR 0001, ADR 0002, ADR 0003)
-│   ├── architecture/            # 交互式架构全景图 (tuinadex_sim_digital_twin.html)
-│   └── superpowers/plans/       # 各阶段实施规划与裁决记录
-├── dataset/                     # 离线数据处理与 LeRobot 适配器包 (tuinadex_dataset)
-│   └── tuinadex_dataset/        # bag_reader, synchronizer, validator, lerobot_exporter, cli
-├── src/                         # ROS2 源码空间 (8 个模块化功能包)
-│   ├── tuinadex_core/           # 共享纯逻辑包 (规范关节名、逐关节限位、align_command、Watchdog FSM)
-│   ├── rebot_control/           # reBot B601-RS 机械臂底层电机与平滑算法控制 SDK
-│   ├── tuinadex_arm/            # 6-DOF 机械臂 ROS2 运行时、SocketCAN 驱动与看门狗
-│   ├── tuinadex_hand/           # 16-DOF 物理灵巧手运行时、Dynamixel 串口驱动
-│   ├── tuinadex_sim/            # MuJoCo 数字孪生包 (URDF/STL 资产、tuina_scene.xml、MujocoSimBridge)
-│   ├── tuinadex_bringup/        # 臂手协同整机统一启动 Launch 包 (robot.launch.py)
-│   ├── tuinadex_recorder/       # 进程内 rosbag2 示教采集节点
-│   └── tuinadex_teleop/         # 统一多模态环境、三机位采集、Web Hub 与遥操示教
-├── tests/                       # 全量测试套件 (81 项遥操单测 + 30 项 Hub 单测 + 13 项 ROS2 集成单测 + VLA 导出)
-├── scripts/                     # 自动化测试与辅助脚本 (verify_all_envs.sh, e2e_*.sh)
-├── AGENTS.md                    # 项目顶层架构宪章、分层规范与 Agent 协作守则
-└── README.md                    # 本文档
-```
-
----
-
-## 6. 核心架构决策记录 (Architecture Decision Records)
-- [ADR 0001: LEAP Hand MVP 核心架构决策记录](docs/adrs/0001-architecture-decisions-mvp.md) (状态机选型、rosbag2 采集器、双域解耦、双重限位护栏)
-- [ADR 0002: MuJoCo 仿真数字孪生与真机统一切换架构决策记录](docs/adrs/0002-architecture-decisions-sim.md) (tuinadex_core 下沉、单线程 50Hz/500Hz 步进、Hold+Ramp 回退保真、统一启动切换)
-- [ADR 0003: 手-臂协同三机位数据采集 Web Hub 与 LeRobot v3.0 流式链路决策记录](docs/adrs/0003-data-collection-hub-and-lerobot-pipeline.md) (标准三机位拓扑、独立 EGL 渲染解耦、JPEG 内存缓存、Parquet 元数据与 H.264 MP4 视频流式导出)
+| 验证目标 | 推荐执行命令 | 预期指标 |
+| :--- | :--- | :--- |
+| **统一 CLI 命令解析与自检** | `python3 -m pytest tests/test_tuina_cli.py -v` | 15 项全部通过 (<0.1s) |
+| **全环境与依赖准入门禁** | `bash scripts/verify_all_envs.sh` | 10 项全 PASSED |
+| **核心安全与限位算法单测** | `source scripts/activate_tuinadex.sh control && pytest tests/test_command_processing.py tests/test_watchdog_fsm.py tests/test_tuinadex_core.py tests/test_tuinadex_arm_core.py -q` | 23 项全部通过 (~0.2s) |
+| **遥操运动学与感知核心单测** | `source scripts/activate_tuinadex.sh control && pytest tests/teleop/ -q` | 81+ 项全部通过 (~2.5s) |
+| **数据采集 Hub 与 API 单测** | `source scripts/activate_tuinadex.sh control && pytest tests/test_camera_rig.py tests/test_episode_buffer.py tests/test_data_channel.py tests/test_data_hub_controller.py tests/test_collection_hub_api.py -q` | 30 项全部通过 (~2.0s) |
+| **LeRobot v3.0 数据流式导出单测**| `source scripts/activate_tuinadex.sh vla && pytest tests/test_dataset_sync_validator.py tests/test_lerobot_v3_exporter.py -q` | 6 项全部通过 (~5.0s) |
+| **22D 臂手联合控制双模回环** | `bash scripts/e2e_unified_robot_check.sh` | ALL PASS (全绿闭环) |
+| **三机位采集 Hub 端到端 E2E** | `bash scripts/e2e_hub_collection_check.sh` | PASS (真实 EGL + H.264) |

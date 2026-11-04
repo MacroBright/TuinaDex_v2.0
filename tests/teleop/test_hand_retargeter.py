@@ -465,5 +465,78 @@ def test_hand_retargeter_zero_and_reset_to_zero_pose(base_wrist_pose):
     assert np.allclose(rst_q, np.zeros(HAND_NUM_DOFS))
 
 
+def test_yaw_stability_during_full_flexion(base_wrist_pose):
+    """Verify that finger yaw (abduction/adduction) remains stable across 0 to 90+ deg MCP flexion.
+    
+    Guards against division-by-near-zero where v_y -> 0 at 90 deg flexion caused 50-80 deg yaw jumps.
+    """
+    retargeter = HandRetargeter(solver_mode="geometric")
+    open_pose = create_synthetic_hand_pose(base_wrist_pose, "open")
+
+    mcp = open_pose.landmarks_3d_cam[LM_INDEX_MCP].copy()
+    L = 0.035
+
+    yaw_angles = []
+    angles_deg = [0, 15, 30, 45, 60, 75, 85, 90, 95]
+    for i, deg in enumerate(angles_deg):
+        rad = math.radians(deg)
+        pose = create_synthetic_hand_pose(base_wrist_pose, "open")
+        pose.landmarks_3d_cam[LM_INDEX_PIP] = [
+            mcp[0] + 0.002,
+            mcp[1] + L * math.cos(rad),
+            mcp[2] - L * math.sin(rad),
+        ]
+        pose.landmarks_3d_cam[LM_INDEX_DIP] = pose.landmarks_3d_cam[LM_INDEX_PIP] + [0, 0.02 * math.cos(rad), -0.02 * math.sin(rad)]
+        pose.landmarks_3d_cam[LM_INDEX_TIP] = pose.landmarks_3d_cam[LM_INDEX_DIP] + [0, 0.02 * math.cos(rad), -0.02 * math.sin(rad)]
+
+        cmd = None
+        for k in range(10):
+            cmd = retargeter.retarget_pose(pose, timestamp=1.0 + i * 0.2 + k * 0.016)
+        yaw_angles.append(cmd.target_q[0])
+
+    max_dev = max(yaw_angles) - min(yaw_angles)
+    assert max_dev < 0.08, f"Yaw jumped by {max_dev:.3f} rad ({math.degrees(max_dev):.1f} deg) across flexion angles!"
+
+
+def test_deep_fist_monotonic_mcp_flexion(base_wrist_pose):
+    """Verify that MCP flexion increases monotonically beyond 90 deg without angle reversal.
+    
+    Guards against atan2(-v_z, hypot(v_x, v_y)) bug where curling into a tight fist past 90 deg
+    reversed backwards and uncurled the fingers.
+    """
+    retargeter = HandRetargeter(solver_mode="geometric")
+    open_pose = create_synthetic_hand_pose(base_wrist_pose, "open")
+    mcp = open_pose.landmarks_3d_cam[LM_INDEX_MCP].copy()
+    L = 0.035
+
+    mcp_flexion_q = []
+    angles_deg = [60, 75, 85, 90, 95, 105]
+    for i, deg in enumerate(angles_deg):
+        rad = math.radians(deg)
+        pose = create_synthetic_hand_pose(base_wrist_pose, "open")
+        pose.landmarks_3d_cam[LM_INDEX_PIP] = [
+            mcp[0],
+            mcp[1] + L * math.cos(rad),
+            mcp[2] - L * math.sin(rad),
+        ]
+        pose.landmarks_3d_cam[LM_INDEX_DIP] = pose.landmarks_3d_cam[LM_INDEX_PIP] + [0, 0.02 * math.cos(rad), -0.02 * math.sin(rad)]
+        pose.landmarks_3d_cam[LM_INDEX_TIP] = pose.landmarks_3d_cam[LM_INDEX_DIP] + [0, 0.02 * math.cos(rad), -0.02 * math.sin(rad)]
+
+        retargeter.reset()
+        cmd = None
+        for k in range(10):
+            cmd = retargeter.retarget_pose(pose, timestamp=1.0 + k * 0.016)
+        mcp_flexion_q.append(cmd.target_q[1])
+
+    for idx in range(1, len(mcp_flexion_q)):
+        prev_q = mcp_flexion_q[idx - 1]
+        curr_q = mcp_flexion_q[idx]
+        assert curr_q >= prev_q - 1e-4, (
+            f"MCP flexion reversed at {angles_deg[idx]} deg! "
+            f"q({angles_deg[idx-1]} deg)={prev_q:.3f} rad > q({angles_deg[idx]} deg)={curr_q:.3f} rad"
+        )
+
+
+
 
 

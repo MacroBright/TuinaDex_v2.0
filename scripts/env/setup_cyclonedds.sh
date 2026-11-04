@@ -73,10 +73,18 @@ fi
 
 # Mode 3: Direct export for current shell
 export ROS_DOMAIN_ID=${ROS_DOMAIN_ID_TARGET}
-export RMW_IMPLEMENTATION=${RMW_TARGET}
-export CYCLONEDDS_URI="file://${DEFAULT_XML_PATH}"
+
+# Check whether rmw_cyclonedds_cpp is actually present on host
+if [ -f "/opt/ros/lyrical/lib/librmw_cyclonedds_cpp.so" ] || [ -f "/usr/lib/librmw_cyclonedds_cpp.so" ]; then
+    export RMW_IMPLEMENTATION=${RMW_TARGET}
+    export CYCLONEDDS_URI="file://${DEFAULT_XML_PATH}"
+else
+    # Fallback to default RMW implementation (e.g. rmw_fastrtps_cpp)
+    unset RMW_IMPLEMENTATION 2>/dev/null || true
+    unset CYCLONEDDS_URI 2>/dev/null || true
+fi
 
 echo "[TD_v2.0-DDS] Environment active for current shell:"
 echo "  - ROS_DOMAIN_ID: ${ROS_DOMAIN_ID}"
-echo "  - RMW_IMPLEMENTATION: ${RMW_IMPLEMENTATION}"
-echo "  - CYCLONEDDS_URI: ${CYCLONEDDS_URI}"
+echo "  - RMW_IMPLEMENTATION: ${RMW_IMPLEMENTATION:-default (rmw_fastrtps_cpp)}"
+echo "  - CYCLONEDDS_URI: ${CYCLONEDDS_URI:-none}"
