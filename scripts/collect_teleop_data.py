@@ -54,6 +54,22 @@ def parse_args():
     parser.add_argument("--port", type=int, default=8080, help="Hub port (0 picks a free port)")
     parser.add_argument("--headless", action="store_true", help="Do not open a MuJoCo viewer")
     parser.add_argument("--ui-fps", type=float, default=25.0, help="SSE telemetry push rate")
+    parser.add_argument(
+        "--camera-config",
+        default=None,
+        help="Physical camera YAML config path (default: configs/real_cameras.yaml)",
+    )
+    parser.add_argument(
+        "--camera-map",
+        default=None,
+        help="Comma-separated camera device overrides, e.g. overhead=/dev/video8,side=/dev/video6",
+    )
+    parser.add_argument(
+        "--max-staleness",
+        type=float,
+        default=None,
+        help="Max camera frame age in seconds before staleness abort (default: 0.06 sim, 0.15 real)",
+    )
     return parser.parse_args()
 
 
@@ -145,11 +161,24 @@ def run_hub_session(args, config: RobotConfig):
     commanded = {
         "q": init_q
     }
+    observed = {
+        "q": np.zeros(config.action_dim, dtype=np.float32),
+        "effort": np.zeros(config.action_dim, dtype=np.float32),
+        "rx_count": 0,
+    }
 
     adapter = None
     producer = None
     env = None
     lock = threading.Lock()
+
+    def _state_supplier() -> dict[str, np.ndarray]:
+        with lock:
+            return {
+                "state": observed["q"].copy(),
+                "effort": observed["effort"].copy(),
+                "contact_forces": np.zeros(4, dtype=np.float32),
+            }
 
     if args.env == "sim":
         adapter = MujocoSimAdapter(headless=args.headless)
@@ -172,20 +201,52 @@ def run_hub_session(args, config: RobotConfig):
             adapter,
             producer,
             action_supplier=lambda: commanded["q"],
+            camera_names=tuple(config.camera_names),
         )
     else:
-        env = make_tuina_env(env_type="real", config=config)
+        from tuinadex_teleop.cameras.real_camera_rig import (
+            RealCameraProducerThread,
+            load_real_camera_configs,
+            parse_camera_map,
+        )
+
+        cam_configs = load_real_camera_configs(
+            config.camera_names,
+            config_path=args.camera_config,
+            overrides=parse_camera_map(args.camera_map),
+        )
+        for cfg in cam_configs:
+            logger.info(
+                f" - Camera [{cfg.name}]: {cfg.device} "
+                f"({cfg.width}x{cfg.height} {cfg.fourcc} @{cfg.fps:.0f}Hz)"
+            )
+        producer = RealCameraProducerThread(
+            cam_configs,
+            target_fps=args.fps,
+            jpeg_quality=90,
+        )
+        producer.start()
+        if not producer.wait_ready(15.0):
+            err = producer.stats()["last_error"]
+            producer.stop()
+            raise RuntimeError(f"Real camera producer failed to start: {err}")
         channel = RealDataChannel(
-            env, action_supplier=lambda: commanded["q"]
+            env=None,
+            action_supplier=lambda: commanded["q"],
+            camera_names=tuple(config.camera_names),
+            camera_producer=producer,
+            state_supplier=_state_supplier,
         )
 
     sub_node = None
     home_pub = None
+    hand_hold_pub = None
     bridge_proc = None
     stop_rx = threading.Event()
     _cmd_rx_count = 0
+    hand_hold_state = {"enabled": False, "q": np.zeros(16, dtype=np.float32)}
 
-    # 1. Fast UDP command listener (seamless across Python 3.10 & 3.14)
+    # 1. Fast UDP command & state listeners (seamless across Python 3.10 & 3.14)
     import socket, struct, subprocess
 
     def _udp_rx_worker():
@@ -199,24 +260,59 @@ def run_hub_session(args, config: RobotConfig):
                 try:
                     data, _ = sock.recvfrom(128)
                     if len(data) >= 92 and data[:4] == b"TD22":
-                        q_vals = struct.unpack("<4s22f", data)[1:]
+                        q_vals = struct.unpack("<4s22f", data[:92])[1:]
                         with lock:
-                            commanded["q"] = np.array(q_vals, dtype=np.float32)
+                            next_q = np.array(q_vals, dtype=np.float32)
+                            if hand_hold_state["enabled"] and len(commanded["q"]) >= 22:
+                                next_q[6:22] = hand_hold_state["q"].copy()
+                            commanded["q"] = next_q
                             _cmd_rx_count += 1
                             if _cmd_rx_count == 1:
                                 print(
-                                    "[INFO] >>> First teleop command received via UDP! Simulation is now tracking teleop hand commands in real-time. <<<",
+                                    "[INFO] >>> First teleop command received via UDP! Tracking teleop commands in real-time. <<<",
                                     flush=True,
                                 )
                 except socket.timeout:
                     continue
                 except Exception:
                     break
+        except OSError as exc:
+            logger.warning(f"UDP command socket unavailable on 127.0.0.1:9876: {exc}")
+        finally:
+            sock.close()
+
+    def _udp_state_rx_worker():
+        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        try:
+            sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            sock.bind(("127.0.0.1", 9878))
+            sock.settimeout(0.5)
+            while not stop_rx.is_set():
+                try:
+                    data, _ = sock.recvfrom(256)
+                    if len(data) >= 180 and data[:4] == b"TS22":
+                        vals = struct.unpack("<4s22f22f", data[:180])[1:]
+                        with lock:
+                            observed["q"] = np.array(vals[:22], dtype=np.float32)
+                            observed["effort"] = np.array(vals[22:44], dtype=np.float32)
+                            observed["rx_count"] += 1
+                            if observed["rx_count"] == 1:
+                                logger.info(
+                                    ">>> First real joint state telemetry received via UDP (TS22). <<<"
+                                )
+                except socket.timeout:
+                    continue
+                except Exception:
+                    break
+        except OSError as exc:
+            logger.warning(f"UDP state socket unavailable on 127.0.0.1:9878: {exc}")
         finally:
             sock.close()
 
     udp_th = threading.Thread(target=_udp_rx_worker, daemon=True)
     udp_th.start()
+    state_udp_th = threading.Thread(target=_udp_state_rx_worker, daemon=True)
+    state_udp_th.start()
 
     # 2. Native ROS 2 subscription or auto-spawned bridge
     try:
@@ -233,17 +329,37 @@ def run_hub_session(args, config: RobotConfig):
                     commanded["q"][:6] = np.array(msg.position[:6], dtype=np.float32)
                     _cmd_rx_count += 1
                     if _cmd_rx_count == 1:
-                        print("[INFO] >>> First /arm/joint_command received! Simulation is now tracking teleop hand commands in real-time. <<<", flush=True)
+                        print("[INFO] >>> First /arm/joint_command received! Tracking teleop commands in real-time. <<<", flush=True)
 
         def _hand_cmd_cb(msg: JointState):
             with lock:
                 if len(msg.position) >= 16:
-                    commanded["q"][6:22] = np.array(msg.position[:16], dtype=np.float32)
+                    if hand_hold_state["enabled"]:
+                        commanded["q"][6:22] = hand_hold_state["q"].copy()
+                    else:
+                        commanded["q"][6:22] = np.array(msg.position[:16], dtype=np.float32)
+
+        def _arm_state_cb(msg: JointState):
+            with lock:
+                if len(msg.position) >= 6:
+                    observed["q"][:6] = np.array(msg.position[:6], dtype=np.float32)
+                    if len(msg.effort) >= 6:
+                        observed["effort"][:6] = np.array(msg.effort[:6], dtype=np.float32)
+
+        def _hand_state_cb(msg: JointState):
+            with lock:
+                if len(msg.position) >= 16:
+                    observed["q"][6:22] = np.array(msg.position[:16], dtype=np.float32)
+                    if len(msg.effort) >= 16:
+                        observed["effort"][6:22] = np.array(msg.effort[:16], dtype=np.float32)
 
         sub_node.create_subscription(JointState, "/arm/joint_command", _arm_cmd_cb, 10)
         sub_node.create_subscription(JointState, "/hand/joint_command", _hand_cmd_cb, 10)
-        from std_msgs.msg import Empty
+        sub_node.create_subscription(JointState, "/arm/joint_states", _arm_state_cb, 10)
+        sub_node.create_subscription(JointState, "/hand/joint_states", _hand_state_cb, 10)
+        from std_msgs.msg import Bool, Empty
         home_pub = sub_node.create_publisher(Empty, "/teleop/home", 10)
+        hand_hold_pub = sub_node.create_publisher(Bool, "/teleop/hand_hold", 10)
         spin_thread = threading.Thread(target=rclpy.spin, args=(sub_node,), daemon=True)
         spin_thread.start()
         logger.info("Connected to ROS 2 command topics (/arm/joint_command, /hand/joint_command, /teleop/home)")
@@ -262,6 +378,7 @@ def run_hub_session(args, config: RobotConfig):
 
     def _do_home():
         with lock:
+            hand_hold_state["enabled"] = False
             if hasattr(config, "action_dim") and config.action_dim >= 22:
                 from tuinadex_teleop.adapters import DEFAULT_READY_ARM_Q
                 commanded["q"][:6] = DEFAULT_READY_ARM_Q.copy()
@@ -298,16 +415,42 @@ def run_hub_session(args, config: RobotConfig):
                 logger.debug(f"Failed to publish /teleop/home: {e}")
         logger.info("[HOME] Robot returned to initial ready posture")
 
+    def _do_hand_hold(enabled: bool):
+        with lock:
+            hand_hold_state["enabled"] = bool(enabled)
+            if enabled and len(commanded["q"]) >= 22:
+                hand_hold_state["q"] = commanded["q"][6:22].copy()
+        try:
+            h_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            h_sock.sendto(b"HAND_HOLD:1" if enabled else b"HAND_HOLD:0", ("127.0.0.1", 9877))
+            h_sock.close()
+        except Exception:
+            pass
+        if sub_node is not None and hand_hold_pub is not None:
+            try:
+                from std_msgs.msg import Bool
+                hand_hold_pub.publish(Bool(data=bool(enabled)))
+            except Exception as e:
+                logger.debug(f"Failed to publish /teleop/hand_hold: {e}")
+        logger.info(f"[HAND_HOLD] Hand action hold -> {'LOCKED' if enabled else 'FOLLOW'}")
+
+    max_staleness = (
+        float(args.max_staleness)
+        if args.max_staleness is not None
+        else (0.15 if args.env == "real" else 0.06)
+    )
     controller = DataHubController(
         channel,
         collector,
         control_fps=args.fps,
         ui_fps=args.ui_fps,
+        max_staleness_s=max_staleness,
     )
     controller.on_save = lambda episode: writer.save_episode(
         episode, task=args.task
     )
     controller.on_home = _do_home
+    controller.on_hand_hold = _do_hand_hold
 
     server = CollectionHubServer(
         controller, host=args.host, port=args.port
@@ -328,11 +471,15 @@ def run_hub_session(args, config: RobotConfig):
     signal.signal(signal.SIGTERM, _handle_termination)
     try:
         while True:
+            if args.mock_teleop:
+                with lock:
+                    next_q = _mock_action(config, tick)
+                    if hand_hold_state["enabled"] and len(next_q) >= 22:
+                        next_q[6:22] = hand_hold_state["q"].copy()
+                    commanded["q"] = next_q
+            tick += 1
+
             if args.env == "sim":
-                if args.mock_teleop:
-                    with lock:
-                        commanded["q"] = _mock_action(config, tick)
-                tick += 1
                 with lock:
                     q = commanded["q"].copy()
                 now = time.monotonic()
@@ -351,7 +498,7 @@ def run_hub_session(args, config: RobotConfig):
                 with lock:
                     adapter.send_command(command)
                     adapter.step(substeps)
-            else:
+            elif env is not None:
                 env.spin_once()
 
             controller.tick()
@@ -371,6 +518,8 @@ def run_hub_session(args, config: RobotConfig):
         logger.info("Hub session interrupted by user.")
     finally:
         stop_rx.set()
+        udp_th.join(timeout=1.0)
+        state_udp_th.join(timeout=1.0)
         if bridge_proc is not None:
             try:
                 bridge_proc.terminate()

@@ -205,3 +205,23 @@ def test_arm_ik_latency_benchmark(arm_solver: ArmIKSolver):
     print(f"\nArm IK Tracking Benchmark: mean={mean_lat:.3f}ms, max={max_lat:.3f}ms")
 
     assert mean_lat < 3.0, f"Mean latency {mean_lat:.3f}ms exceeded 3ms budget!"
+
+
+def test_arm_ik_fixed_downward_preserves_custom_target_rot():
+    """Verify FIXED_DOWNWARD honors explicit target_rot instead of snapping to R_DOWNWARD_DEFAULT."""
+    for q_deg in ([0.0, 30.0, 30.0, -30.0, 0.0, 0.0], [0.0, 70.0, 55.0, -60.0, 0.0, 0.0]):
+        q0 = np.deg2rad(q_deg)
+        solver = ArmIKSolver(home_q=q0)
+        p0, R0 = solver.forward_kinematics(q0)
+
+        for step in range(60):
+            cmd = solver.solve(
+                target_pos=p0,
+                target_rot=R0,
+                orientation_mode=ArmOrientationMode.FIXED_DOWNWARD,
+                dt=1.0 / 60.0,
+                clutch_state=ClutchState.ENGAGED,
+                timestamp=10.0 + step / 60.0,
+            )
+
+        np.testing.assert_allclose(cmd.target_q, q0, atol=1e-4)

@@ -164,7 +164,7 @@ class ROS2RobotEnv(BaseTuinaEnv):
                         msg.header.stamp.sec + msg.header.stamp.nanosec * 1e-9
                     )
         except Exception as e:
-            self._node.get_logger().warn(f"Failed to decode image from {cam_name}: {e}")
+            self._node.get_logger().warning(f"Failed to decode image from {cam_name}: {e}")
 
     def reset(self) -> dict[str, Any]:
         """重置并获取初始观测."""

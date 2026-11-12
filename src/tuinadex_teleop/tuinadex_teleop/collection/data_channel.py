@@ -126,10 +126,10 @@ class SimDataChannel(BaseDataChannel):
 
 
 class RealDataChannel(BaseDataChannel):
-    """ROS2 observations with JPEG caching for unchanged camera arrays.
+    """Physical robot observations from ROS 2 and/or a UVC camera producer.
 
-    The LEAP Hand has no fingertip FSR, so contact forces remain zero rather
-    than being estimated.
+    The LEAP Hand has no fingertip FSR, so contact forces default to zero unless
+    explicitly supplied by the environment or state supplier.
     """
 
     def __init__(
@@ -138,20 +138,41 @@ class RealDataChannel(BaseDataChannel):
         action_supplier: Callable[[], np.ndarray],
         camera_names: tuple[str, ...] = DEFAULT_CAMERAS,
         jpeg_quality: int = 90,
+        *,
+        camera_producer=None,
+        state_supplier: Callable[[], dict[str, np.ndarray]] | None = None,
     ):
+        if env is None and (camera_producer is None or state_supplier is None):
+            raise ValueError(
+                "RealDataChannel requires 'env' or both 'camera_producer' and 'state_supplier'"
+            )
         self._env = env
         self._action_supplier = action_supplier
+        self._camera_producer = camera_producer
+        self._state_supplier = state_supplier
         self._jpeg_quality = int(jpeg_quality)
         self.camera_names = tuple(camera_names)
         self._cache: dict[str, tuple[np.ndarray, bytes]] = {}
         self._stamps: dict[str, float] = {}
 
     def get_camera_packets(self) -> CameraPacket:
+        if self._camera_producer is not None:
+            latest = self._camera_producer.latest()
+            jpeg: dict[str, bytes] = {}
+            timestamps: dict[str, float] = {}
+            for cam in self.camera_names:
+                entry = latest.get(cam)
+                if entry is not None:
+                    payload, stamp = entry
+                    jpeg[cam] = payload
+                    timestamps[cam] = float(stamp)
+            return CameraPacket(jpeg=jpeg, timestamps=timestamps)
+
         observation = self._env.get_observation()
         images = observation.get("images", {})
         now = time.monotonic()
-        jpeg: dict[str, bytes] = {}
-        timestamps: dict[str, float] = {}
+        jpeg = {}
+        timestamps = {}
         for cam in self.camera_names:
             image = images.get(cam)
             if image is None:
@@ -171,7 +192,11 @@ class RealDataChannel(BaseDataChannel):
     def get_proprioception(
         self,
     ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-        observation = self._env.get_observation()
+        observation = (
+            self._state_supplier()
+            if self._state_supplier is not None
+            else self._env.get_observation()
+        )
         q = np.asarray(observation["state"], dtype=np.float32)
         effort = np.asarray(
             observation.get("effort", np.zeros_like(q)), dtype=np.float32

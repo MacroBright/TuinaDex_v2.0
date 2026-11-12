@@ -84,7 +84,6 @@ from tuinadex_teleop.kinematics.arm_ik_solver import (
     ArmIKMetrics,
     ArmIKSolver,
     ArmOrientationMode,
-    R_DOWNWARD_DEFAULT,
 )
 from tuinadex_teleop.kinematics.hand_retargeter import (
     HandRetargeter,
@@ -705,6 +704,7 @@ def main():
     print("   'q' or ESC  : Exit")
     print("===========================================================================\n")
 
+    latched_hand_q = np.zeros(HAND_NUM_DOFS, dtype=np.float64)
     try:
         while True:
             t_loop_start = time.time()
@@ -819,17 +819,33 @@ def main():
                 else:
                     target_pos = clutch.compute_target(np.zeros(3), fallback_robot_pos=home_pos)
 
+                anchor_rot = (
+                    clutch._robot_rot_anchor.copy()
+                    if clutch._robot_rot_anchor is not None
+                    else home_R.copy()
+                )
+
                 # Target orientation
-                if current_mode == ArmOrientationMode.TRACK_IMU and imu_reading.is_valid:
-                    R_target = wrist_imu_tracker.compute_target_rotation(
-                        reading=imu_reading,
-                        fallback_rot=home_R,
-                        anchor_robot_rot=home_R,
-                    )
+                if current_mode == ArmOrientationMode.TRACK_IMU:
+                    if imu_reading.is_valid:
+                        R_target = wrist_imu_tracker.compute_target_rotation(
+                            reading=imu_reading,
+                            fallback_rot=anchor_rot,
+                            anchor_robot_rot=anchor_rot,
+                        )
+                    else:
+                        R_target = anchor_rot
                 elif current_mode == ArmOrientationMode.FIXED_DOWNWARD:
-                    R_target = R_DOWNWARD_DEFAULT.copy()
+                    R_target = anchor_rot
                 elif current_mode == ArmOrientationMode.TRACK_WRIST:
-                    R_target = wrist_pose.orientation_table_matrix if wrist_pose.orientation_table_matrix is not None else R_DOWNWARD_DEFAULT.copy()
+                    R_target = (
+                        clutch.compute_target_orientation(
+                            wrist_pose.orientation_table_matrix,
+                            fallback_robot_rot=anchor_rot,
+                        )
+                        if wrist_pose.orientation_table_matrix is not None
+                        else anchor_rot
+                    )
                 else:
                     R_target = None
 
@@ -843,6 +859,15 @@ def main():
                     timestamp=t_now,
                 )
             arm_metrics = arm_ik.get_metrics()
+
+            # 离合未接通时，手部保持锁定，严禁跟随人手乱动
+            if clutch.state != ClutchState.ENGAGED:
+                if latched_hand_q is not None:
+                    hand_cmd.target_q = latched_hand_q.copy()
+                else:
+                    hand_cmd.target_q = np.zeros(HAND_NUM_DOFS, dtype=np.float32)
+            else:
+                latched_hand_q = hand_cmd.target_q.copy()
 
             # 5. Composite 22-DOF Command
             composite_cmd = TeleopCommand(
@@ -910,10 +935,10 @@ def main():
                 cv2.imshow("TuinaDex 22-DOF Digital Twin Teleoperation", dashboard)
 
                 key = cv2.waitKey(1) & 0xFF
-                if key in (27, ord("q")):
-                    print("\n[INFO] User requested exit.")
+                if key in (27, ord("q"), ord("Q")):
+                    print("\n[INFO] User requested exit (Key 'Q' / ESC).")
                     break
-                elif key in (32, ord("c")):
+                elif key in (32, ord("c"), ord("C")):
                     tot_f = forces.get("total", 0.0)
                     if clutch.state != ClutchState.ENGAGED and tot_f > 40.0:
                         print(f"\n[CLUTCH WARN] 无法接管: 当前接触力 ({tot_f:.1f}N) 过大，请先抬起机械臂脱离接触！")
@@ -925,9 +950,14 @@ def main():
                             current_human_rot=wrist_pose.orientation_table_matrix,
                             current_robot_rot=cur_ee_R,
                         )
-                        if clutch.state == ClutchState.ENGAGED and imu_reading.is_valid:
-                            wrist_imu_tracker.zero(imu_reading)
-                        print(f"\n[CLUTCH] State changed to: {clutch.state.name} (IMU Zero-Referenced)")
+                        if clutch.state == ClutchState.ENGAGED:
+                            latched_hand_q = hand_cmd.target_q.copy()
+                            if imu_reading.is_valid:
+                                wrist_imu_tracker.zero(imu_reading)
+                            print("\n[CLUTCH] 离合接管 [ENGAGED]: 动作跟随中")
+                        else:
+                            latched_hand_q = obs.hand_actual_q.copy()
+                            print("\n[CLUTCH] 离合暂停 [DISENGAGED]: 臂手动作锁定")
                 elif key in (ord("s"), ord("S")):
                     is_on = safety_supervisor.toggle_enabled()
                     mode_str = "ACTIVE (有安全门限模式)" if is_on else "BYPASS (无安全门限/原始自由模式)"
@@ -973,7 +1003,7 @@ def main():
                     clutch.estop()
                     safety_supervisor.level = SafetyLevel.ESTOP
                     print(f"\n[ESTOP] Emergency Stop activated!")
-                elif key == ord("r"):
+                elif key in (ord("r"), ord("R")):
                     wrist_tracker.reset()
                     wrist_imu_tracker.reset()
                     safety_supervisor.reset()

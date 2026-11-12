@@ -1,0 +1,40 @@
+# ==============================================================================
+# TuinaDex v2.0 Physical Camera Hardware Mapping (Data Collection Hub)
+# ==============================================================================
+# NOTE: Both LRCP U3-JX02 cameras share USB PID:VID (0bda:5283) and SN0001.
+# Using /dev/v4l/by-path/... binds deterministically to the physical USB port
+# so device indices never swap across reboots.
+
+cameras:
+  overhead:
+    device: "/dev/v4l/by-path/pci-0000:00:14.0-usb-0:7.3:1.0-video-index0"
+    fallback_device: "/dev/video8"
+    width: 640
+    height: 480
+    fps: 60.0
+    fourcc: "MJPG"
+    rotate_deg: 0
+    flip_h: false
+    flip_v: false
+
+  side:
+    device: "/dev/v4l/by-path/pci-0000:00:14.0-usb-0:7.2:1.0-video-index0"
+    fallback_device: "/dev/video6"
+    width: 640
+    height: 480
+    fps: 60.0
+    fourcc: "MJPG"
+    rotate_deg: 0
+    flip_h: false
+    flip_v: false
+
+  wrist:
+    device: ""
+    fallback_device: ""
+    width: 640
+    height: 480
+    fps: 60.0
+    fourcc: "MJPG"
+    rotate_deg: 0
+    flip_h: false
+    flip_v: false

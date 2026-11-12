@@ -515,3 +515,130 @@ def test_safety_bypass_mode_unrestricted_operation():
     assert rep_on.level == SafetyLevel.RETRACTING
 
 
+def test_hand_safety_gates_limits_jump_and_sustained_overcurrent():
+    """Verify Gate 2 target jump, Gate 3 hand physical limits, and Gate 4 sustained current overload."""
+    config = SafetyConfig(
+        max_hand_q_jump_rad=1.0,
+        hand_limit_tolerance_rad=0.05,
+        max_hand_current_ma=250.0,
+        hand_overcurrent_timeout_s=0.40,
+    )
+    supervisor = SafetySupervisor(config)
+    hand_limits = np.tile(np.array([[-0.3, 2.0]], dtype=np.float64), (16, 1))
+
+    t0 = 800.0
+    cur_arm_q = np.zeros(6)
+    cur_arm_pos = np.array([0.2, 0.0, 0.25])
+    cur_arm_rot = np.eye(3)
+    cur_hand_q = np.zeros(16)
+    home_arm_q = np.zeros(6)
+
+    # 1. Valid maximum boundary curl inside tolerance must remain NORMAL (must not false-freeze on fist)
+    rep_valid = supervisor.evaluate(
+        t_now=t0,
+        wrist_tracking_valid=True,
+        wrist_pos=np.zeros(3),
+        wrist_rot=np.eye(3),
+        wrist_timestamp=t0,
+        current_arm_q=cur_arm_q,
+        current_arm_pos=cur_arm_pos,
+        current_arm_rot=cur_arm_rot,
+        current_hand_q=cur_hand_q,
+        home_arm_q=home_arm_q,
+        contact_forces={"total": 0.0},
+        clutch_state=ClutchState.ENGAGED,
+        target_hand_q=np.full(16, 2.0, dtype=np.float64),
+        hand_current=np.full(16, 150.0, dtype=np.float64),
+        hand_joint_limits=hand_limits,
+    )
+    assert rep_valid.level == SafetyLevel.NORMAL
+
+    # 2. Sudden command teleport > 1.0 rad must trigger HAND_Q_JUMP retract
+    rep_cmd_jump = supervisor.evaluate(
+        t_now=t0 + 0.02,
+        wrist_tracking_valid=True,
+        wrist_pos=np.zeros(3),
+        wrist_rot=np.eye(3),
+        wrist_timestamp=t0 + 0.02,
+        current_arm_q=cur_arm_q,
+        current_arm_pos=cur_arm_pos,
+        current_arm_rot=cur_arm_rot,
+        current_hand_q=cur_hand_q,
+        home_arm_q=home_arm_q,
+        contact_forces={"total": 0.0},
+        clutch_state=ClutchState.ENGAGED,
+        target_hand_q=np.zeros(16, dtype=np.float64),  # 2.0 rad delta from 2.0
+        hand_current=np.full(16, 150.0, dtype=np.float64),
+        hand_joint_limits=hand_limits,
+    )
+    assert rep_cmd_jump.level == SafetyLevel.RETRACTING
+    assert rep_cmd_jump.violation == SafetyViolation.HAND_Q_JUMP
+
+    # 3. Hand target beyond physical limit tolerance triggers FROZEN (HAND_LIMIT_EXCEEDED)
+    supervisor.reset()
+    oob_hand = np.zeros(16, dtype=np.float64)
+    oob_hand[5] = 2.40  # > 2.0 + 0.05
+    rep_lim = supervisor.evaluate(
+        t_now=t0 + 1.0,
+        wrist_tracking_valid=True,
+        wrist_pos=np.zeros(3),
+        wrist_rot=np.eye(3),
+        wrist_timestamp=t0 + 1.0,
+        current_arm_q=cur_arm_q,
+        current_arm_pos=cur_arm_pos,
+        current_arm_rot=cur_arm_rot,
+        current_hand_q=cur_hand_q,
+        home_arm_q=home_arm_q,
+        contact_forces={"total": 0.0},
+        clutch_state=ClutchState.ENGAGED,
+        target_hand_q=oob_hand,
+        hand_joint_limits=hand_limits,
+    )
+    assert rep_lim.level == SafetyLevel.FROZEN
+    assert rep_lim.violation == SafetyViolation.HAND_LIMIT_EXCEEDED
+    assert np.all(supervisor.frozen_hand_q <= 2.0)
+
+    # 4. Transient over-current spike (<0.40s) stays NORMAL, sustained >=0.40s triggers RETRACT
+    supervisor.reset()
+    high_cur = np.zeros(16, dtype=np.float64)
+    high_cur[1] = 310.0
+    rep_oc_1 = supervisor.evaluate(
+        t_now=t0 + 2.0,
+        wrist_tracking_valid=True,
+        wrist_pos=np.zeros(3),
+        wrist_rot=np.eye(3),
+        wrist_timestamp=t0 + 2.0,
+        current_arm_q=cur_arm_q,
+        current_arm_pos=cur_arm_pos,
+        current_arm_rot=cur_arm_rot,
+        current_hand_q=cur_hand_q,
+        home_arm_q=home_arm_q,
+        contact_forces={"total": 0.0},
+        clutch_state=ClutchState.ENGAGED,
+        target_hand_q=cur_hand_q,
+        hand_current=high_cur,
+        hand_joint_limits=hand_limits,
+    )
+    assert rep_oc_1.level == SafetyLevel.NORMAL
+
+    rep_oc_2 = supervisor.evaluate(
+        t_now=t0 + 2.45,
+        wrist_tracking_valid=True,
+        wrist_pos=np.zeros(3),
+        wrist_rot=np.eye(3),
+        wrist_timestamp=t0 + 2.45,
+        current_arm_q=cur_arm_q,
+        current_arm_pos=cur_arm_pos,
+        current_arm_rot=cur_arm_rot,
+        current_hand_q=cur_hand_q,
+        home_arm_q=home_arm_q,
+        contact_forces={"total": 0.0},
+        clutch_state=ClutchState.ENGAGED,
+        target_hand_q=cur_hand_q,
+        hand_current=high_cur,
+        hand_joint_limits=hand_limits,
+    )
+    assert rep_oc_2.level == SafetyLevel.RETRACTING
+    assert rep_oc_2.violation == SafetyViolation.HAND_CURRENT_OVERLOAD
+
+

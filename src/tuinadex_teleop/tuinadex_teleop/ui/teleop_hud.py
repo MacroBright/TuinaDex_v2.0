@@ -48,6 +48,7 @@ def draw_simulation_hud(
     imu_tracker: Optional[WristImuTracker] = None,
     safety_report: Optional[SafetyReport] = None,
     toast: Optional[str] = None,
+    hand_hold: bool = False,
 ) -> np.ndarray:
     """Create a high-density, polished telemetry dashboard for the 22-DOF MuJoCo twin."""
     cam_h, cam_w = camera_view.shape[:2]
@@ -201,6 +202,13 @@ def draw_simulation_hud(
     cv2.line(panel, (20, y_pos - 6), (panel_w - 20, y_pos - 6), (60, 60, 70), 1)
     cv2.putText(panel, "LEAP Hand 16-DOF Actual Positions (rad):", (20, y_pos),
                 cv2.FONT_HERSHEY_SIMPLEX, 0.44, (200, 200, 200), 1, cv2.LINE_AA)
+    if hand_hold:
+        cv2.rectangle(panel, (panel_w - 195, y_pos - 12), (panel_w - 20, y_pos + 5), (0, 110, 210), -1)
+        cv2.putText(panel, "HAND: HOLD [LOCK]", (panel_w - 188, y_pos),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.40, (255, 255, 255), 1, cv2.LINE_AA)
+    else:
+        cv2.putText(panel, "HAND: FOLLOW", (panel_w - 140, y_pos),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.40, (80, 255, 80), 1, cv2.LINE_AA)
     y_pos += 15
 
     col_w = 145
@@ -218,7 +226,7 @@ def draw_simulation_hud(
     # 7. Hotkey footer
     footer_y = cam_h - 15
     cv2.line(panel, (20, footer_y - 15), (panel_w - 20, footer_y - 15), (60, 60, 70), 1)
-    footer_text = "[C] Clutch | [S] Safety | [Z] Zero Hand | [I] Zero IMU | [M] Mode | [A] Pos | [X] IMU XY"
+    footer_text = "[C] Clutch | [R/H] Ready | [L] HoldHand | [S] Safety | [Z] Zero | [I] IMU | [Q] Quit"
     cv2.putText(panel, footer_text, (10, footer_y),
                 cv2.FONT_HERSHEY_SIMPLEX, 0.35, (140, 140, 150), 1, cv2.LINE_AA)
 

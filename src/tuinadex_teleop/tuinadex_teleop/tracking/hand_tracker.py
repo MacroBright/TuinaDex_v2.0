@@ -18,14 +18,13 @@ from typing import List, Optional, Tuple
 try:
     import mediapipe
 except ImportError:
-    import os
-    import sys
-
-    _candidate = os.path.expanduser(
-        "~/win_office/conda/envs/tuinadex-control/lib/python3.10/site-packages"
-    )
-    if os.path.isdir(_candidate) and _candidate not in sys.path:
-        sys.path.append(_candidate)
+    if sys.version_info[:2] == (3, 10):
+        import os
+        _candidate = os.path.expanduser(
+            "~/win_office/conda/envs/tuinadex-control/lib/python3.10/site-packages"
+        )
+        if os.path.isdir(_candidate) and _candidate not in sys.path:
+            sys.path.append(_candidate)
 
 from mediapipe import Image as MpImage
 from mediapipe import ImageFormat

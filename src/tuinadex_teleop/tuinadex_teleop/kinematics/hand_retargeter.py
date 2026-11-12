@@ -365,6 +365,7 @@ class HandRetargeter:
         self._last_metrics = HandRetargetingMetrics(solver_mode=self.solver_mode)
         self._last_q = np.zeros(HAND_NUM_DOFS, dtype=np.float64)
         self._last_valid_time: Optional[float] = None
+        self._slew_anchor_active: bool = False
 
     def _init_dex_retargeting(self) -> None:
         """Initialize Pinocchio-based DexPilot and Vector retargeters."""
@@ -395,6 +396,20 @@ class HandRetargeter:
         self._filter.reset()
         self._last_q = np.zeros(HAND_NUM_DOFS, dtype=np.float64)
         self._last_valid_time = None
+        self._slew_anchor_active = False
+
+    def sync_held_state(self, held_q: np.ndarray, timestamp: Optional[float] = None) -> None:
+        """Anchor retargeter state at a held pose so resuming teleop slew-ramps smoothly."""
+        clipped = np.clip(
+            np.asarray(held_q, dtype=np.float64),
+            self.joint_limits[:, 0],
+            self.joint_limits[:, 1],
+        )
+        self._filter.reset()
+        self._last_q = clipped.copy()
+        if timestamp is not None:
+            self._last_valid_time = float(timestamp)
+        self._slew_anchor_active = True
 
     def reset_to_zero_pose(self) -> np.ndarray:
         """Immediately reset internal filters and return the canonical open zero posture."""
@@ -623,14 +638,21 @@ class HandRetargeter:
         filtered_q = np.clip(filtered_q, self.joint_limits[:, 0], self.joint_limits[:, 1])
 
         # 6. Slew-rate velocity limit (protect hardware and suppress single-frame spikes)
-        if self._last_valid_time is not None and (now > self._last_valid_time + 1e-4) and np.any(self._last_q != 0.0):
+        if (
+            self._last_valid_time is not None
+            and (now > self._last_valid_time + 1e-4)
+            and (self._slew_anchor_active or np.any(self._last_q != 0.0))
+        ):
             dt_s = min(0.10, now - self._last_valid_time)
             max_delta = self.max_joint_velocity_rad_s * dt_s
+            pre_slew_q = filtered_q
             filtered_q = np.clip(
-                filtered_q,
+                pre_slew_q,
                 self._last_q - max_delta,
                 self._last_q + max_delta,
             )
+            if self._slew_anchor_active and float(np.max(np.abs(filtered_q - pre_slew_q))) < 1e-3:
+                self._slew_anchor_active = False
         self._last_valid_time = now
         self._last_q = filtered_q.copy()
         dt_ms = (time.perf_counter() - t_start) * 1000.0

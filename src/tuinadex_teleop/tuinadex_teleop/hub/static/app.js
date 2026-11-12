@@ -25,6 +25,9 @@ const secondaryStripEl = document.getElementById('secondary-strip');
 // 表单输入
 const instructionInput = document.getElementById('instruction');
 const phaseInput = document.getElementById('phase');
+const handHoldBtn = document.getElementById('btn-hand-hold');
+const handHoldLabelEl = document.getElementById('btn-hand-hold-label');
+const handHoldBadgeEl = document.getElementById('hand-hold-badge');
 
 // 2. Web Audio 音频反馈系统 (ALOHA 风格音效)
 class AudioFeedback {
@@ -104,13 +107,29 @@ const CAMERA_METAS = {
   side: { name: 'SIDE 侧向水平视角', fov: '45°', tag: '下压深度切面' },
 };
 
-let primaryCam = 'wrist';
-const allCams = ['wrist', 'overhead', 'side'];
+let primaryCam = '';
+let allCams = [];
+let camerasInitialized = false;
+
+function formatCamLabel(meta, cam) {
+  if (!meta) return cam.toUpperCase();
+  return meta.fov ? `${meta.name} · ${meta.fov}` : meta.name;
+}
+
+function formatCamThumbTag(meta) {
+  if (!meta) return '';
+  if (meta.tag && meta.fov) return `${meta.tag} · ${meta.fov}`;
+  return meta.tag || meta.fov || '';
+}
 
 function renderCameraLayout() {
+  if (!primaryCam || allCams.length === 0) {
+    secondaryStripEl.innerHTML = '';
+    return;
+  }
   const meta = CAMERA_METAS[primaryCam] || { name: primaryCam.toUpperCase(), fov: '', tag: '' };
   primaryImgEl.src = `/video/${primaryCam}`;
-  primaryViewNameEl.textContent = `${meta.name} · ${meta.fov}`;
+  primaryViewNameEl.textContent = formatCamLabel(meta, primaryCam);
 
   // 渲染副机位缩略图
   secondaryStripEl.innerHTML = '';
@@ -125,7 +144,7 @@ function renderCameraLayout() {
       <img src="/video/${cam}" alt="${cMeta.name}"/>
       <figcaption>
         <span>${cam.toUpperCase()}</span>
-        <strong>${cMeta.tag} · ${cMeta.fov}</strong>
+        <strong>${formatCamThumbTag(cMeta)}</strong>
       </figcaption>
       <div class="thumb-swap-overlay">设为主视角</div>
     `;
@@ -134,18 +153,41 @@ function renderCameraLayout() {
   });
 }
 
+function syncCamerasFromStatus(status) {
+  const serverCams = Array.isArray(status && status.cameras)
+    ? status.cameras.filter(Boolean)
+    : [];
+  if (serverCams.length === 0) return;
+
+  const changed =
+    !camerasInitialized ||
+    serverCams.length !== allCams.length ||
+    serverCams.some((cam, idx) => cam !== allCams[idx]);
+
+  if (!changed) return;
+
+  allCams = serverCams.slice();
+  if (!allCams.includes(primaryCam)) {
+    primaryCam = allCams.includes('wrist')
+      ? 'wrist'
+      : (allCams.includes('overhead') ? 'overhead' : allCams[0]);
+  }
+  camerasInitialized = true;
+  renderCameraLayout();
+}
+
 function swapPrimaryCam(targetCam) {
+  if (allCams.length <= 1) return;
   if (!targetCam || targetCam === primaryCam) {
-    // 默认切到下一个
     const others = allCams.filter((c) => c !== primaryCam);
+    if (others.length === 0) return;
     targetCam = others[0];
   }
+  if (!allCams.includes(targetCam)) return;
   primaryCam = targetCam;
   renderCameraLayout();
   audio.phaseBlip();
 }
-
-renderCameraLayout();
 
 // 4. 22 维生理学解剖分组卡片构建
 const armJointsEl = document.getElementById('arm-joints');
@@ -279,10 +321,10 @@ let timerInterval = null;
 
 function setControlAvailability(state) {
   const allowed = {
-    IDLE: new Set(['start', 'home']),
-    RECORDING: new Set(['pause', 'stop']),
-    PAUSED: new Set(['resume', 'stop', 'home']),
-    REVIEWING: new Set(['save', 'discard', 'home']),
+    IDLE: new Set(['start', 'home', 'hand_hold']),
+    RECORDING: new Set(['pause', 'stop', 'hand_hold']),
+    PAUSED: new Set(['resume', 'stop', 'home', 'hand_hold']),
+    REVIEWING: new Set(['save', 'discard', 'home', 'hand_hold']),
     SAVING: new Set(),
   };
   document.querySelectorAll('[data-act]').forEach((button) => {
@@ -306,6 +348,7 @@ function addEpisodeRecord(epId, statusTag, isSaved) {
 }
 
 function renderStatus(status) {
+  syncCamerasFromStatus(status);
   const curState = status.state;
   stateEl.textContent = curState;
   stateEl.dataset.state = curState;
@@ -372,6 +415,19 @@ function renderStatus(status) {
   }
   setControlAvailability(curState);
 
+  const handHeld = Boolean(status.hand_hold);
+  if (handHoldBtn) {
+    handHoldBtn.classList.toggle('is-active', handHeld);
+    handHoldBtn.setAttribute('aria-pressed', handHeld ? 'true' : 'false');
+  }
+  if (handHoldLabelEl) {
+    handHoldLabelEl.textContent = handHeld ? '保持中 · 恢复跟随' : '灵巧手保持当前动作';
+  }
+  if (handHoldBadgeEl) {
+    handHoldBadgeEl.textContent = handHeld ? '已锁定保持' : '跟随中';
+    handHoldBadgeEl.classList.toggle('is-locked', handHeld);
+  }
+
   // 遥测数据分发
   const telemetry = status.telemetry || {};
   const q = telemetry.state || [];
@@ -420,6 +476,10 @@ async function act(name) {
       showNotice(error.error || `操作被拒绝: ${name}`);
     } else if (name === 'home') {
       showNotice('已一键复位至初始就绪姿态');
+    } else if (name === 'hand_hold') {
+      audio.phaseBlip();
+      const willHold = handHoldBtn ? !handHoldBtn.classList.contains('is-active') : true;
+      showNotice(willHold ? '灵巧手已锁定保持当前动作 (再按 L 恢复跟随)' : '灵巧手已恢复遥操跟随');
     }
   } catch (error) {
     showNotice('Hub 连接已断开');
@@ -499,6 +559,13 @@ document.addEventListener('keydown', (event) => {
   if (key === 'h') {
     event.preventDefault();
     act('home');
+    return;
+  }
+
+  // 7. L 键保持/恢复灵巧手动作
+  if (key === 'l') {
+    event.preventDefault();
+    act('hand_hold');
     return;
   }
 });

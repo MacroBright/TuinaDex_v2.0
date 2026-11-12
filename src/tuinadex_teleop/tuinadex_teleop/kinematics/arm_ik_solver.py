@@ -324,14 +324,16 @@ class ArmIKSolver:
         # 1. Enforce Cartesian workspace safety boundaries
         safe_pos = self.clamp_workspace(target_pos)
 
-        # 2. Determine target orientation matrix
-        if orientation_mode == ArmOrientationMode.FIXED_DOWNWARD or target_rot is None:
-            safe_rot = R_DOWNWARD_DEFAULT.copy()
-        elif orientation_mode == ArmOrientationMode.POSITION_ONLY:
+        # 2. Determine target orientation matrix (respect caller-supplied anchor rot
+        #    so FIXED_DOWNWARD / --no-imu preserves the engaged initial posture;
+        #    fall back to R_DOWNWARD_DEFAULT only when target_rot is omitted)
+        if orientation_mode == ArmOrientationMode.POSITION_ONLY:
             _, cur_rot = self.forward_kinematics(self.current_q)
             safe_rot = cur_rot
-        else:
+        elif target_rot is not None:
             safe_rot = np.asarray(target_rot, dtype=np.float64)
+        else:
+            safe_rot = R_DOWNWARD_DEFAULT.copy()
 
         # Construct target SE(3) transform
         target_se3 = pin.SE3(safe_rot, safe_pos)

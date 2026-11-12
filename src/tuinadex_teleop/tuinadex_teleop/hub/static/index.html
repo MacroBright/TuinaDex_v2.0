@@ -45,7 +45,7 @@
     <section class="viewport-section" aria-label="多相机视角矩阵">
       <!-- 主视窗 (Primary Viewport) -->
       <div class="primary-viewport" id="primary-viewport">
-        <img id="primary-img" src="/video/wrist" alt="主视角相机画面"/>
+        <img id="primary-img" alt="主视角相机画面"/>
 
         <!-- OSD 悬浮透明平视层 (Heads-Up Display) -->
         <div class="osd-layer">
@@ -80,33 +80,15 @@
 
           <div class="osd-bottom-right">
             <div class="osd-pill osd-view-tag" id="primary-view-tag" title="点击或按 Tab 切换主视角">
-              <span id="primary-view-name">WRIST 腕部第一视角</span>
+              <span id="primary-view-name">等待相机连接...</span>
               <small class="tab-hint">[Tab 交换]</small>
             </div>
           </div>
         </div>
       </div>
 
-      <!-- 副视窗缩略栏 (Secondary Strip) -->
-      <div class="secondary-strip" id="secondary-strip" aria-label="辅助机位缩略图">
-        <figure class="secondary-thumb" data-cam="overhead" title="点击设为主视角 (Tab)">
-          <img src="/video/overhead" alt="俯视全景画面"/>
-          <figcaption>
-            <span>OVERHEAD</span>
-            <strong>全局俯视 · 60°</strong>
-          </figcaption>
-          <div class="thumb-swap-overlay">设为主视角</div>
-        </figure>
-
-        <figure class="secondary-thumb" data-cam="side" title="点击设为主视角 (Tab)">
-          <img src="/video/side" alt="侧视深度画面"/>
-          <figcaption>
-            <span>SIDE</span>
-            <strong>侧向水平 · 45°</strong>
-          </figcaption>
-          <div class="thumb-swap-overlay">设为主视角</div>
-        </figure>
-      </div>
+      <!-- 副视窗缩略栏 (Secondary Strip，由前端根据 status.cameras 动态挂载) -->
+      <div class="secondary-strip" id="secondary-strip" aria-label="辅助机位缩略图"></div>
 
       <!-- 快速阶段切换按键坞 -->
       <div class="phase-selector-bar" role="toolbar" aria-label="手法阶段切换">
@@ -141,6 +123,9 @@
           </button>
           <button type="button" class="btn-action btn-home" data-act="home" title="一键回到初始姿态 (H)">
             <span class="btn-icon-symbol">⟲</span> 回初始姿态 <kbd>H</kbd>
+          </button>
+          <button type="button" class="btn-action btn-hand-hold" id="btn-hand-hold" data-act="hand_hold" title="保持灵巧手当前动作 / 恢复跟随 (L)">
+            <span class="btn-icon-symbol">✋</span> <span id="btn-hand-hold-label">灵巧手保持当前动作</span> <kbd>L</kbd>
           </button>
         </div>
         <p id="notice" class="notice-bar" role="status" aria-live="polite"></p>
@@ -186,7 +171,7 @@
           </div>
           <!-- 灵巧手 16-DOF -->
           <div class="joint-group-card">
-            <h3>LEAP Hand 灵巧手 (16-DOF)</h3>
+            <h3>LEAP Hand 灵巧手 (16-DOF) <span id="hand-hold-badge" class="hand-mode-pill">跟随中</span></h3>
             <div class="hand-fingers-grid">
               <div class="finger-subcard">
                 <h4>拇指 (Thumb)</h4>
@@ -229,6 +214,7 @@
       <div class="dock-pill"><kbd>Space</kbd> 录制 / 停止</div>
       <div class="dock-pill"><kbd>S</kbd> 批准保存</div>
       <div class="dock-pill"><kbd>D</kbd> 舍弃重来</div>
+      <div class="dock-pill"><kbd>L</kbd> 灵巧手保持 / 跟随</div>
       <div class="dock-pill"><kbd>Tab</kbd> 交换主副机位</div>
       <div class="dock-pill"><kbd>1-4</kbd> 切换手法阶段</div>
       <div class="dock-pill"><kbd>F</kbd> 全屏禅道模式</div>

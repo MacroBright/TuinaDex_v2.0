@@ -67,6 +67,25 @@ ros2 launch tuinadex_teleop teleop_sim.launch.py use_sim:=true mock:=true mock_i
 - 点击页面中 **【开始录制 (Start)】** 开始采集；示教完成后点击 **【停止录制 (Stop)】** $\rightarrow$ **【保存试次 (Save Episode)】**；
 - 系统自动多路流式编码生成包含 H.264 MP4 视频与 Parquet 表格的标准 `LeRobotDataset v3.0`。
 
+### 5. 方式 E：真机 22D 臂手协同遥操 (`teleop real`)
+连接真实机械臂（SocketCAN `can0`）与灵巧手（串口 `/dev/ttyUSB0`，若未接手会自动启用 `mock_hand` 接管）以及 RealSense 相机：
+
+```bash
+# 步骤 1: 激活 Linux SocketCAN 接口 (1 Mbps，波特率必须为 1000000)
+sudo ip link set can0 down 2>/dev/null || true
+sudo ip link set can0 up type can bitrate 1000000
+ip -details link show can0   # 确认输出状态为 state UP，bitrate 1000000
+
+# 步骤 2: 直接拉起真机遥操系统 (若无手腕 IMU 传入 --no-imu)
+source scripts/activate_tuinadex.sh control
+./bin/tuina teleop real --no-imu
+
+# 步骤 3: 界面就绪后在 OpenCV HUD 窗口按键操作：
+#   - 按 [R] 键：机械臂自动以五次多项式 3.0 秒平滑展开就位到推拿准备姿态；
+#   - 人手移入镜头视场，按 [空格键] (Space) 挂上离合开始 XYZ 三向平移示教；
+#   - 随时按 [空格键] 脱开离合（机械臂原位安全定格悬停），按 [Q] 退出。
+```
+
 ---
 
 ## 核心高频快捷键速查卡 (HUD Hotkeys)
@@ -84,7 +103,7 @@ ros2 launch tuinadex_teleop teleop_sim.launch.py use_sim:=true mock:=true mock_i
 | **`[A]`** | **位移映射轴向切换** | 实时轮换位置正交对齐（默认 `-y,+x,+z` 适配 90° 床侧基座旋转安装）。 |
 | **`[X]`** | **手腕 IMU 姿态轴向切换** | 实时轮换手腕 IMU 姿态轴向（大写 `[X]` 为反向轮换，严格保证 $\det=+1$）。 |
 | **`[1]`/`[2]`/`[3]`** | **灵巧手解算模式切换** | 1: Hybrid 混合优化模式 (默认)；2: 纯几何映射模式；3: DexPilot 模式。 |
-| **`[R]`** | **仿真一键重置** | 复位离合器、滤波器及 MuJoCo 仿真模型至 Ready 就绪姿态。 |
+| **`[R]`** | **平滑就位 / 准备姿态复位** | **真机与仿真通用**：以五次多项式（Smoothstep Quintic 3.0秒匀速柔顺过渡）驱动机械臂平滑到达推拿准备姿态 (`ready_pose_deg`)。 |
 | **`[Q]`** / **`[ESC]`** | **安全退出** | 安全释放相机与 IMU 串口资源并关闭所有窗口。 |
 
 ---

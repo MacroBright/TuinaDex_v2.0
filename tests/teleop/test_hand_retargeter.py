@@ -537,6 +537,16 @@ def test_deep_fist_monotonic_mcp_flexion(base_wrist_pose):
         )
 
 
+def test_sync_held_state_smooths_resume_from_zero_hold(base_wrist_pose):
+    """Releasing a held open zero posture toward a flexed pose must slew-ramp smoothly."""
+    retargeter = HandRetargeter(max_joint_velocity_rad_s=5.0)
+    fist_pose = create_synthetic_hand_pose(base_wrist_pose, "fist")
+
+    retargeter.sync_held_state(np.zeros(HAND_NUM_DOFS), timestamp=10.0)
+    cmd = retargeter.retarget_pose(fist_pose, timestamp=10.02)  # dt = 20ms => max_delta = 0.10 rad
+    assert np.all(np.abs(cmd.target_q) <= 0.10 + 1e-4)
+
+
 
 
 

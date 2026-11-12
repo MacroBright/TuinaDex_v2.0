@@ -19,18 +19,12 @@ def generate_launch_description():
     handedness_arg = DeclareLaunchArgument(
         "handedness", default_value="any", description="Filter handedness: any, Right, Left"
     )
-
-    conda_site_packages = os.path.expanduser(
-        "~/win_office/conda/envs/leap_hand/lib/python3.14/site-packages"
+    mock_camera_arg = DeclareLaunchArgument(
+        "mock_camera", default_value="false", description="Use synthetic camera frames"
     )
+
+    # 系统 Python 3.14 自带完整的 mediapipe/opencv/numpy，严禁注入跨版本 3.10 site-packages
     extra_env = {}
-    if os.path.isdir(conda_site_packages):
-        current_pythonpath = os.environ.get("PYTHONPATH", "")
-        extra_env["PYTHONPATH"] = (
-            f"{conda_site_packages}:{current_pythonpath}"
-            if current_pythonpath
-            else conda_site_packages
-        )
 
     teleop_node = Node(
         package="tuinadex_teleop",
@@ -44,6 +38,7 @@ def generate_launch_description():
                 "camera_id": LaunchConfiguration("camera_id"),
                 "show_preview": LaunchConfiguration("show_preview"),
                 "required_handedness": LaunchConfiguration("handedness"),
+                "mock_camera": LaunchConfiguration("mock_camera"),
             },
         ],
     )
@@ -52,5 +47,6 @@ def generate_launch_description():
         camera_id_arg,
         show_preview_arg,
         handedness_arg,
+        mock_camera_arg,
         teleop_node,
     ])

@@ -131,3 +131,31 @@ def test_submit_home_action_invokes_on_home_callback():
         assert home_invoked == [True]
     finally:
         ctrl.shutdown()
+
+
+def test_submit_hand_hold_toggle_and_home_reset():
+    channel, collector, ctrl = _make()
+    states = []
+    ctrl.on_hand_hold = lambda enabled: states.append(enabled)
+    try:
+        assert ctrl.status()["hand_hold"] is False
+
+        assert ctrl.submit("hand_hold")["ok"] is True
+        ctrl.tick()
+        assert ctrl.status()["hand_hold"] is True
+        assert states == [True]
+
+        assert ctrl.submit("hand_hold")["ok"] is True
+        ctrl.tick()
+        assert ctrl.status()["hand_hold"] is False
+        assert states == [True, False]
+
+        # Explicit payload enable -> HOME must clear hand_hold
+        assert ctrl.submit("hand_hold", {"enabled": True})["ok"] is True
+        ctrl.tick()
+        assert ctrl.status()["hand_hold"] is True
+        assert ctrl.submit("home")["ok"] is True
+        ctrl.tick()
+        assert ctrl.status()["hand_hold"] is False
+    finally:
+        ctrl.shutdown()

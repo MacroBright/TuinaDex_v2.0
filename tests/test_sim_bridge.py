@@ -58,8 +58,8 @@ def test_sim_bridge_get_state_dimensions(scene_xml_path):
     assert np.all(np.isfinite(state.positions))
 
 
-def test_sim_bridge_control_step(scene_xml_path):
-    bridge = MujocoSimBridge(scene_xml_path)
+def test_sim_bridge_control_step(hand_xml_path):
+    bridge = MujocoSimBridge(hand_xml_path)
     targets = np.zeros(16, dtype=np.float64)
     targets[1] = 0.5  # act_index_mcp
     bridge.set_joint_targets(targets)
@@ -75,8 +75,8 @@ def test_sim_bridge_control_step(scene_xml_path):
     assert abs(state.positions[0]) < 0.1
 
 
-def test_sim_bridge_position_command_stays_stable_and_converges(scene_xml_path):
-    bridge = MujocoSimBridge(scene_xml_path)
+def test_sim_bridge_position_command_stays_stable_and_converges(hand_xml_path):
+    bridge = MujocoSimBridge(hand_xml_path)
     bridge.set_joint_targets([0.2] * 16)
     bridge.step(750)
     state = bridge.get_state()

@@ -1,14 +1,14 @@
 is_valid: true
-device_port: /dev/myimu
+device_port: /dev/ttyUSB0
 imu_axis_mapping: +x,+y,+z
 mounting: IMU strapped on dorsal wrist, Y along forearm towards fingers, X across
   wrist, Z pointing outward from wrist dorsal side
 neutral_quat_wxyz:
-- 0.9808753997676732
-- 0.014702981071946232
-- 0.11859009960506482
-- 0.15363482923434432
+- 0.9892838233542097
+- 0.06136610543015087
+- 0.10367300178981803
+- -0.08248409940043464
 neutral_rpy_deg:
-- 3.84
-- 13.19
-- 18.25
+- 6.13
+- 12.43
+- -8.86

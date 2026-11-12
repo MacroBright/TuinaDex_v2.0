@@ -1,5 +1,14 @@
 """Standard three-camera specifications and simulation capture."""
 from .camera_specs import STANDARD_CAMERA_SPECS, CameraMountType, CameraSpec
+from .real_camera_rig import (
+    RealCameraConfig,
+    RealCameraProducerThread,
+    discover_uvc_devices,
+    encode_bgr_to_jpeg,
+    load_real_camera_configs,
+    parse_camera_map,
+    resolve_default_camera_config_path,
+)
 from .sim_camera_rig import (
     CameraProducerThread,
     SimCameraRig,
@@ -13,6 +22,13 @@ __all__ = [
     "STANDARD_CAMERA_SPECS",
     "SimCameraRig",
     "CameraProducerThread",
+    "RealCameraConfig",
+    "RealCameraProducerThread",
+    "discover_uvc_devices",
+    "encode_bgr_to_jpeg",
+    "load_real_camera_configs",
+    "parse_camera_map",
+    "resolve_default_camera_config_path",
     "encode_rgb_to_jpeg",
     "decode_jpeg_to_rgb",
 ]

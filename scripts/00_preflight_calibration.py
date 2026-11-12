@@ -1075,6 +1075,7 @@ def main():
     parser = argparse.ArgumentParser(description="TuinaDex Unified Pre-Flight Teleoperation Calibrator")
     parser.add_argument("--mock", action="store_true", help="Run in mock mode without physical hardware")
     parser.add_argument("--no-gui", action="store_true", help="Run in headless terminal mode")
+    parser.add_argument("--camera-id", type=str, default=None, help="RealSense camera device ID, serial, or index (default: auto)")
     parser.add_argument("--imu-port", type=str, default="/dev/myimu", help="Serial port for IMU")
     parser.add_argument("--imu-axis-mapping", type=str, default="+x,+y,+z", help="IMU mounting alignment to robot base")
     parser.add_argument("--axis-mapping", type=str, default="-y,+x,+z", help="桌面到机械臂基座的末端平移映射 (默认 '-y,+x,+z'，对齐床侧横置与桌面坐标)")
@@ -1100,13 +1101,17 @@ def main():
     hud_renderer = ChineseHudRenderer()
 
     # 1. Initialize RealSense Camera Stream
+    camera_id = args.camera_id
+    if str(camera_id).strip() in ("", "0", "None", "auto"):
+        camera_id = None
+
     if args.mock:
         print("[INFO] 正在启动 MOCK RealSense 相机流...")
-        stream = MockRealSenseStream(width=640, height=480, fps=30)
+        stream = MockRealSenseStream(width=640, height=480, fps=30, device_id=camera_id)
     else:
         print("[INFO] 正在启动 RealSense D455 相机流...")
         try:
-            stream = RealSenseStream(width=640, height=480, fps=30)
+            stream = RealSenseStream(width=640, height=480, fps=30, device_id=camera_id)
         except Exception as e:
             print(f"[ERROR] 无法启动 RealSense 相机: {e}")
             print("[提示] 可追加 '--mock' 参数进行无相机离线测试。")

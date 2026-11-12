@@ -26,6 +26,7 @@ class HubAction(str, Enum):
     DISCARD = "discard"
     LABEL = "label"
     HOME = "home"
+    HAND_HOLD = "hand_hold"
 
 
 class DataHubController:
@@ -73,10 +74,12 @@ class DataHubController:
         self._save_errors = 0
         self._last_save_error: str | None = None
         self._last_abort_reason: str | None = None
+        self._hand_hold: bool = False
         self._last_telemetry: dict = {}
 
         self.on_save: Callable[[EpisodeBuffer], None] | None = None
         self.on_home: Callable[[], None] | None = None
+        self.on_hand_hold: Callable[[bool], None] | None = None
         self.collector.on_save = self._enqueue_save
 
     def submit(self, action: str, payload: dict | None = None) -> dict:
@@ -109,6 +112,7 @@ class DataHubController:
                 "discarded": self.collector.total_episodes_discarded,
                 "save_errors": self._save_errors,
                 "last_save_error": self._last_save_error,
+                "hand_hold": self._hand_hold,
                 "telemetry": self._last_telemetry,
             }
 
@@ -166,11 +170,22 @@ class DataHubController:
         elif action is HubAction.DISCARD:
             self._finish_episode(save=False)
         elif action is HubAction.HOME:
+            self._hand_hold = False
             if self.on_home is not None:
                 try:
                     self.on_home()
                 except Exception:
                     logger.exception("on_home callback failed")
+        elif action is HubAction.HAND_HOLD:
+            if "enabled" in payload:
+                self._hand_hold = bool(payload["enabled"])
+            else:
+                self._hand_hold = not self._hand_hold
+            if self.on_hand_hold is not None:
+                try:
+                    self.on_hand_hold(self._hand_hold)
+                except Exception:
+                    logger.exception("on_hand_hold callback failed")
         elif action is HubAction.LABEL:
             if "phase_label" in payload:
                 self._phase_label = str(payload["phase_label"])

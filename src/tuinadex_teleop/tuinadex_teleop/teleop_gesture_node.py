@@ -41,6 +41,7 @@ class TeleopGestureNode(Node):
         self.declare_parameter("filter_min_cutoff", 1.0)
         self.declare_parameter("filter_beta", 0.05)
         self.declare_parameter("required_handedness", "any")
+        self.declare_parameter("mock_camera", False)
 
         self.camera_id = self.get_parameter("camera_id").get_parameter_value().integer_value
         self.rate_hz = self.get_parameter("publish_rate_hz").get_parameter_value().double_value
@@ -49,6 +50,7 @@ class TeleopGestureNode(Node):
         beta = self.get_parameter("filter_beta").get_parameter_value().double_value
         self.required_handedness = str(
             self.get_parameter("required_handedness").value)
+        self.mock_camera = self.get_parameter("mock_camera").get_parameter_value().bool_value
 
         # 初始化视觉追踪与映射器
         self.tracker = HandTracker(max_num_hands=1)
@@ -59,21 +61,26 @@ class TeleopGestureNode(Node):
         self.cmd_pub = self.create_publisher(JointState, "/hand/joint_command", 10)
 
         # 初始化摄像头
-        self.cap = cv2.VideoCapture(self.camera_id)
-        if not self.cap.isOpened():
-            self.get_logger().error(f"无法打开摄像头 ID={self.camera_id}!")
-            raise SystemExit("Camera open failed")
-
-        self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
-        self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
-        self.cap.set(cv2.CAP_PROP_FPS, 30)
+        self.cap = None
+        if not self.mock_camera:
+            self.cap = cv2.VideoCapture(self.camera_id)
+            if not self.cap.isOpened():
+                self.get_logger().warning(
+                    f"无法打开物理摄像头 ID={self.camera_id}，自动回退到模拟相机模式 (mock_camera=True)。"
+                )
+                self.mock_camera = True
+                self.cap = None
+            else:
+                self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
+                self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+                self.cap.set(cv2.CAP_PROP_FPS, 30)
 
         self.get_logger().info(
-            f"手势遥操作节点就绪! [Camera={self.camera_id}, Rate={self.rate_hz}Hz, Preview={self.show_preview}]"
+            f"手势遥操作节点就绪! [Camera={self.camera_id}, Rate={self.rate_hz}Hz, Preview={self.show_preview}, MockCamera={self.mock_camera}]"
         )
 
-        # 离合状态
-        self.is_paused = False
+        # 离合状态 (初始默认为暂停，防止手部未准备好时灵巧手乱动)
+        self.is_paused = True
         self.is_locked = False
         self.locked_angles = np.zeros(16, dtype=np.float64)
         self._hand_seen = False
@@ -84,27 +91,45 @@ class TeleopGestureNode(Node):
 
     def _loop(self) -> None:
         """视觉推理与发布主循环."""
-        ret, frame = self.cap.read()
-        if not ret or frame is None:
-            return
-
-        now = time.time()
-        results = self.tracker.detect(frame)
-        seen = bool(results) and handedness_ok(
-            results[0].handedness, self.required_handedness)
-        if regained_after_gap(self._hand_seen, seen):
-            self.filter.reset()
-        self._hand_seen = seen
-
-        if seen:
-            hand = results[0]
-            # 1. 映射为 16 维相对弧度 (0 为全开，>0 为弯曲)
-            raw_angles = self.mapper.map_keypoints_to_leap(hand)
-            # 2. 1€ 滤波平滑
-            filtered_angles = self.filter(raw_angles)
+        if self.mock_camera:
+            self._frame_count = getattr(self, "_frame_count", 0) + 1
+            frame = np.full((480, 640, 3), 35, dtype=np.uint8)
+            cv2.putText(frame, "TuinaDex Teleop (Mock Camera Stream)", (30, 240),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 128), 2)
+            # 生成平滑周期性弯曲测试轨迹 (0.0 到 0.5 rad)
+            t = self._frame_count * 0.05
+            test_flexion = 0.25 * (1.0 + np.sin(t))
+            simulated_angles = np.zeros(16, dtype=np.float64)
+            simulated_angles[1] = test_flexion        # index mcp
+            simulated_angles[2] = test_flexion * 0.8  # index pip
+            simulated_angles[5] = test_flexion        # middle mcp
+            simulated_angles[6] = test_flexion * 0.8  # middle pip
+            simulated_angles[12] = test_flexion * 0.6 # thumb mcp
+            filtered_angles = simulated_angles
+            results = []
+            seen = True
         else:
-            # 未检测到手部: 不发送或保持
-            filtered_angles = None
+            ret, frame = self.cap.read()
+            if not ret or frame is None:
+                return
+
+            now = time.time()
+            results = self.tracker.detect(frame)
+            seen = bool(results) and handedness_ok(
+                results[0].handedness, self.required_handedness)
+            if regained_after_gap(self._hand_seen, seen):
+                self.filter.reset()
+            self._hand_seen = seen
+
+            if seen:
+                hand = results[0]
+                # 1. 映射为 16 维相对弧度 (0 为全开，>0 为弯曲)
+                raw_angles = self.mapper.map_keypoints_to_leap(hand)
+                # 2. 1€ 滤波平滑
+                filtered_angles = self.filter(raw_angles)
+            else:
+                # 未检测到手部: 不发送或保持
+                filtered_angles = None
 
         # 3. 构造并发布 ROS2 指令
         if filtered_angles is not None and not self.is_paused:
@@ -130,8 +155,9 @@ class TeleopGestureNode(Node):
             )
             cv2.imshow("TuinaDex Teleop HUD", annotated)
             key = cv2.waitKey(1) & 0xFF
-            if key == 32:  # SPACE 离合切换
+            if key in (32, ord('c'), ord('C')):  # SPACE / C 离合切换
                 self.is_paused = not self.is_paused
+                self.get_logger().info(f"[CLUTCH] 状态切换: {'PAUSED (已暂停锁定)' if self.is_paused else 'RESUMED (已接管跟随)'}")
             elif key == ord('l') or key == ord('L'):  # L 锁定手势
                 self.is_locked = not self.is_locked
                 if self.is_locked and filtered_angles is not None:
@@ -140,7 +166,7 @@ class TeleopGestureNode(Node):
                 raise SystemExit("user quit")
 
     def destroy_node(self) -> None:
-        if self.cap.isOpened():
+        if self.cap is not None and self.cap.isOpened():
             self.cap.release()
         try:
             self.tracker.close()

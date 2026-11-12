@@ -46,6 +46,8 @@ class SafetyViolation(Enum):
     FORCE_TOTAL_OVERLOAD = "Total contact force exceeded limit"
     FORCE_FINGER_OVERLOAD = "Single finger force exceeded limit"
     FORCE_RATE_OVERLOAD = "Force surge rate exceeded limit"
+    HAND_LIMIT_EXCEEDED = "Hand joint exceeded physical limit"
+    HAND_CURRENT_OVERLOAD = "Hand motor current overload sustained"
 
 
 @dataclass
@@ -56,6 +58,9 @@ class SafetyConfig:
     max_pos_jump_m: float = 0.18          # Max Cartesian translation jump per frame (m, relaxed from 0.08m)
     max_rot_jump_deg: float = 60.0        # Max orientation angular jump per frame (deg, relaxed from 35.0 deg)
     max_hand_q_jump_rad: float = 1.50     # Max dexterous finger joint jump (rad, relaxed from 0.80 rad)
+    hand_limit_tolerance_rad: float = 0.05  # Tolerance beyond URDF hand limits before freeze (rad)
+    max_hand_current_ma: float = 260.0    # Sustained hand over-current ceiling (mA; hw Mode-5 limit is 150*1.34~201)
+    hand_overcurrent_timeout_s: float = 0.80  # Duration current exceeds ceiling before retract (s)
     min_singular_value: float = 0.010     # Min Jacobian singular value for singularity detection (relaxed from 0.025)
     min_manipulability: float = 0.0005    # Min Yoshikawa manipulability index (relaxed from 0.0015)
     joint_limit_margin_rad: float = 0.02  # Joint soft limit buffer margin (~1.15 deg, relaxed from 0.05 rad)
@@ -218,6 +223,8 @@ class SafetySupervisor:
         self.last_human_pos: Optional[np.ndarray] = None
         self.last_human_rot: Optional[np.ndarray] = None
         self.last_hand_q: Optional[np.ndarray] = None
+        self.last_target_hand_q: Optional[np.ndarray] = None
+        self.hand_overcurrent_start_time: Optional[float] = None
         self.last_total_force: float = 0.0
         self.last_force_time: Optional[float] = None
 
@@ -237,6 +244,7 @@ class SafetySupervisor:
         self.last_message = "Safety supervisor reset" if self.enabled else "Safety guardrails BYPASS (Unrestricted Mode)"
         # Reset supervisor and tracking state
         self.hand_loss_start_time = None
+        self.hand_overcurrent_start_time = None
         self.retract_controller = None
         self.frozen_arm_q = None
         self.frozen_arm_pos = None
@@ -247,6 +255,7 @@ class SafetySupervisor:
         self.last_human_pos = None
         self.last_human_rot = None
         self.last_hand_q = None
+        self.last_target_hand_q = None
 
     def toggle_enabled(self) -> bool:
         """Toggle between enabled (Guarded) and bypassed (Unrestricted) safety modes."""
@@ -289,6 +298,9 @@ class SafetySupervisor:
         contact_forces: Dict[str, float],
         clutch_state: ClutchState,
         arm_ik_solver: Optional[Any] = None,
+        target_hand_q: Optional[np.ndarray] = None,
+        hand_current: Optional[np.ndarray] = None,
+        hand_joint_limits: Optional[np.ndarray] = None,
     ) -> SafetyReport:
         """Evaluate all four safety gates.
         
@@ -372,7 +384,64 @@ class SafetySupervisor:
                     metrics={"force_rate": df_rate},
                 )
 
+            if hand_current is not None and len(hand_current) >= 16:
+                cur_arr = np.asarray(hand_current[:16], dtype=np.float64)
+                if np.all(np.isfinite(cur_arr)):
+                    cur_abs = np.abs(cur_arr)
+                    max_cur = float(np.max(cur_abs))
+                    if max_cur > self.config.max_hand_current_ma:
+                        if self.hand_overcurrent_start_time is None:
+                            self.hand_overcurrent_start_time = t_now
+                        oc_dur = t_now - self.hand_overcurrent_start_time
+                        if oc_dur >= self.config.hand_overcurrent_timeout_s:
+                            worst_c = int(np.argmax(cur_abs))
+                            return self._trigger_retract(
+                                SafetyViolation.HAND_CURRENT_OVERLOAD,
+                                f"Hand motor J{worst_c} current {max_cur:.1f}mA > {self.config.max_hand_current_ma:.0f}mA for {oc_dur:.2f}s",
+                                t_now, current_arm_pos, current_arm_rot, current_arm_q, current_hand_q, home_arm_q,
+                                metrics={"hand_joint": worst_c, "max_current_ma": max_cur, "duration_s": oc_dur},
+                            )
+                    else:
+                        self.hand_overcurrent_start_time = None
+            else:
+                self.hand_overcurrent_start_time = None
+        else:
+            self.hand_overcurrent_start_time = None
+
         # Gate 3: Kinematic Singularity & Joint Limits (Freeze in Place during active teleop)
+        if clutch_state == ClutchState.ENGAGED:
+            if not np.all(np.isfinite(current_hand_q)) or (
+                target_hand_q is not None and not np.all(np.isfinite(target_hand_q))
+            ):
+                safe_hand = np.zeros(16, dtype=np.float64)
+                return self._trigger_retract(
+                    SafetyViolation.HAND_Q_JUMP,
+                    "Non-finite hand joint state or command detected",
+                    t_now, current_arm_pos, current_arm_rot, current_arm_q, safe_hand, home_arm_q,
+                )
+
+            if hand_joint_limits is not None:
+                lim = np.asarray(hand_joint_limits, dtype=np.float64)
+                if lim.shape == (16, 2):
+                    tol = float(self.config.hand_limit_tolerance_rad)
+                    q_check = (
+                        np.asarray(target_hand_q, dtype=np.float64)
+                        if target_hand_q is not None
+                        else np.asarray(current_hand_q, dtype=np.float64)
+                    )
+                    low_viol = lim[:, 0] - q_check
+                    high_viol = q_check - lim[:, 1]
+                    max_exceed = np.maximum(low_viol, high_viol)
+                    worst_h = int(np.argmax(max_exceed))
+                    if float(max_exceed[worst_h]) > tol:
+                        safe_hand_q = np.clip(current_hand_q, lim[:, 0], lim[:, 1])
+                        return self._trigger_freeze(
+                            SafetyViolation.HAND_LIMIT_EXCEEDED,
+                            f"Hand J{worst_h} ({q_check[worst_h]:.3f}rad) exceeded limit [{lim[worst_h, 0]:.2f}, {lim[worst_h, 1]:.2f}]",
+                            t_now, current_arm_pos, current_arm_rot, current_arm_q, safe_hand_q,
+                            metrics={"hand_joint": worst_h, "target_rad": float(q_check[worst_h])},
+                        )
+
         if clutch_state == ClutchState.ENGAGED and arm_ik_solver is not None:
             # Check manipulability & singular values
             if hasattr(arm_ik_solver, "compute_manipulability"):
@@ -476,10 +545,26 @@ class SafetySupervisor:
                         metrics={"max_hand_delta": max_hand_delta},
                     )
 
+            if target_hand_q is not None and self.last_target_hand_q is not None:
+                target_hand_arr = np.asarray(target_hand_q, dtype=np.float64)
+                max_cmd_delta = float(np.max(np.abs(target_hand_arr - self.last_target_hand_q)))
+                if max_cmd_delta > self.config.max_hand_q_jump_rad:
+                    return self._trigger_retract(
+                        SafetyViolation.HAND_Q_JUMP,
+                        f"Hand command jump {max_cmd_delta:.2f}rad exceeded limit {self.config.max_hand_q_jump_rad:.2f}rad",
+                        t_now, current_arm_pos, current_arm_rot, current_arm_q, current_hand_q, home_arm_q,
+                        metrics={"max_hand_cmd_delta": max_cmd_delta},
+                    )
+
         # Update last known valid states
         self.last_human_pos = np.array(wrist_pos, dtype=np.float64, copy=True) if wrist_pos is not None else None
         self.last_human_rot = np.array(wrist_rot, dtype=np.float64, copy=True) if wrist_rot is not None else None
         self.last_hand_q = np.array(current_hand_q, dtype=np.float64, copy=True)
+        self.last_target_hand_q = (
+            np.array(target_hand_q, dtype=np.float64, copy=True)
+            if (target_hand_q is not None and clutch_state == ClutchState.ENGAGED)
+            else None
+        )
         self.last_valid_time = t_now
 
         self.level = SafetyLevel.NORMAL

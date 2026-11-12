@@ -203,3 +203,32 @@ def test_mjpeg_multipart_framing_is_rfc_compliant(hub):
         assert payload[:2] == b"\xff\xd8", "JPEG SOI missing"
         assert payload[-2:] == b"\xff\xd9", "JPEG EOI missing"
         assert rest[length:length + 2] == b"\r\n", "part must close with CRLF"
+
+
+def test_hand_hold_action_and_ui_controls(hub):
+    base, controller, _ = hub
+    received = []
+    controller.on_hand_hold = received.append
+
+    status_code, data = _get_json(f"{base}/api/status")
+    assert status_code == 200
+    assert data["hand_hold"] is False
+
+    status_code, res = _post(f"{base}/api/action/hand_hold")
+    assert status_code == 200 and res["ok"] is True
+    controller.tick()
+    assert _get_json(f"{base}/api/status")[1]["hand_hold"] is True
+    assert received == [True]
+
+    status_code, res = _post(f"{base}/api/action/hand_hold")
+    assert status_code == 200 and res["ok"] is True
+    controller.tick()
+    assert _get_json(f"{base}/api/status")[1]["hand_hold"] is False
+    assert received == [True, False]
+
+    with urllib.request.urlopen(f"{base}/", timeout=5) as response:
+        html = response.read().decode()
+        assert 'data-act="hand_hold"' in html
+    with urllib.request.urlopen(f"{base}/app.js", timeout=5) as response:
+        js = response.read().decode()
+        assert "hand_hold" in js and "key === 'l'" in js
