@@ -186,7 +186,14 @@ def test_task8_environment_change_gate_rules():
 
     assert session_file.exists(), ".agent/SESSION_STATE.md does not exist"
     session_content = session_file.read_text()
-    assert "不变量 24" in session_content
+    # The blackboard is a living document rewritten per work cycle; its invariant
+    # naming may be the long form "不变量 24" or the short form "[I24]". Match the
+    # gate semantics instead of a brittle literal.
+    has_invariant_gate = ("不变量 24" in session_content) or ("[I24]" in session_content)
+    assert has_invariant_gate, (
+        "SESSION_STATE.md must codify the dependency-change gate invariant "
+        "(I24 / 不变量 24: lock-file sync + verify_all_envs.sh admission)"
+    )
     assert "verify_all_envs.sh" in session_content
 
 

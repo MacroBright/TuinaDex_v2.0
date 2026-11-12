@@ -13,3 +13,4 @@ data/
 .agent/
 agents/
 
+*.egg-info/

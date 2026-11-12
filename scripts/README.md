@@ -68,3 +68,22 @@ bash scripts/e2e_unified_robot_check.sh
 bash scripts/e2e_hub_collection_check.sh
 ```
 
+---
+
+## 系统级 CLI 统一调用入口 (`tuina`)
+
+所有上述脚本与真机工具均已汇总封装为全局系统命令 `tuina`（全局软链 `~/.local/bin/tuina`，支持 Bash/Zsh 补全）：
+
+```bash
+tuina --env-info                              # 诊断 Conda/ROS2/CycloneDDS/CAN/串口
+tuina launch --sim --gui                      # 启动 22D MuJoCo 仿真
+tuina teleop composite --arm-channel can0     # 真机遥操 (带前置自检与安全确认门禁)
+tuina collect hub --env sim --mode arm_hand   # 启动 Web UI 采集工作台
+tuina calibrate all                           # 三合一标定 / tuina calibrate arm-ready
+tuina arm status / move -j 1 -a 15 / can up   # reBot 机械臂与 1Mbps CAN 管理
+tuina hand control / diagnose / teleop        # 16-DOF LEAP Hand 工具集
+tuina data convert --bag <dir> --out <repo>   # 在 tuinadex-vla 环境转换 LeRobot v3.0
+tuina sys verify / build / test / e2e         # 环境自检、编译、隔离测试与 E2E
+```
+
+

@@ -1,69 +1,89 @@
 #!/usr/bin/env bash
 # ==============================================================================
-# TuinaDex v2.0 Unified CLI Launcher (tuina)
-# Provides auto-detection for conda environments, ROS 2 and DDS baselines.
+# TuinaDex v2.0 - Unified System CLI Entrypoint (tuina)
+#
+# Resolves workspace root and loads ROS 2 / workspace baselines cleanly without
+# leaking cross-version Conda Python 3.10 PYTHONPATH/cmeel libraries into native
+# ROS 2 Lyrical (Python 3.14) child processes. Subprocess runtime isolation
+# (control / vla / ros2 / bash) is enforced by tuinadex_bringup.cli.env_detector.
 # ==============================================================================
-set -e
 
-# Resolve repository root from real path of this launcher
+set -eo pipefail
+
+# 1. Resolve repository root (follow symlinks so ~/.local/bin/tuina works)
 SOURCE="${BASH_SOURCE[0]}"
-while [ -h "$SOURCE" ]; do
-    DIR="$(cd -P "$(dirname "$SOURCE")" >/dev/null 2>&1 && pwd)"
-    SOURCE="$(readlink "$SOURCE")"
-    [[ $SOURCE != /* ]] && SOURCE="$DIR/$SOURCE"
+while [ -L "${SOURCE}" ]; do
+    DIR="$(cd -P "$(dirname "${SOURCE}")" >/dev/null 2>&1 && pwd)"
+    TARGET="$(readlink "${SOURCE}")"
+    if [[ "${TARGET}" == /* ]]; then
+        SOURCE="${TARGET}"
+    else
+        SOURCE="${DIR}/${TARGET}"
+    fi
 done
-BIN_DIR="$(cd -P "$(dirname "$SOURCE")" >/dev/null 2>&1 && pwd)"
-REPO_ROOT="$(cd "$BIN_DIR/.." >/dev/null 2>&1 && pwd)"
-
+SCRIPT_DIR="$(cd -P "$(dirname "${SOURCE}")" >/dev/null 2>&1 && pwd)"
+REPO_ROOT="$(cd "${SCRIPT_DIR}/.." >/dev/null 2>&1 && pwd)"
 export TUINADEX_ROOT="${REPO_ROOT}"
 
-# 1. Source ROS 2 Lyrical baseline if available
-if [ -f "/opt/ros/lyrical/setup.bash" ]; then
-    # shellcheck disable=SC1091
-    source "/opt/ros/lyrical/setup.bash"
+# 2. Source ROS 2 base & built workspace if present (safely without nounset errors)
+ROS_DISTRO="${ROS_DISTRO:-lyrical}"
+export ROS_DISTRO
+
+if [ -f "/opt/ros/${ROS_DISTRO}/setup.bash" ]; then
+    # shellcheck disable=SC1090
+    source "/opt/ros/${ROS_DISTRO}/setup.bash"
 fi
+
 if [ -f "${REPO_ROOT}/install/setup.bash" ]; then
     # shellcheck disable=SC1091
     source "${REPO_ROOT}/install/setup.bash"
 fi
 
-# 2. Source CycloneDDS baseline if available
-if [ -f "${REPO_ROOT}/scripts/env/setup_cyclonedds.sh" ]; then
-    # shellcheck disable=SC1091
-    source "${REPO_ROOT}/scripts/env/setup_cyclonedds.sh" >/dev/null 2>&1 || true
-fi
-
-# 3. Locate Python executable (Prefer tuinadex-control conda env)
-PY_CANDIDATES=(
-    "${TUINADEX_CONTROL_PYTHON:-}"
-    "$HOME/win_office/conda/envs/tuinadex-control/bin/python"
-    "$HOME/miniconda3/envs/tuinadex-control/bin/python"
-    "$(which python3 2>/dev/null || true)"
-)
-
-TARGET_PYTHON=""
-for candidate in "${PY_CANDIDATES[@]}"; do
-    if [ -n "$candidate" ] && [ -x "$candidate" ]; then
-        TARGET_PYTHON="$candidate"
+# 3. Configure CycloneDDS silently only if rmw_cyclonedds_cpp is installed
+_cyclonedds_found=0
+for _lib_candidate in \
+    "/opt/ros/${ROS_DISTRO}/lib/librmw_cyclonedds_cpp.so" \
+    "/opt/ros/${ROS_DISTRO}/lib/x86_64-linux-gnu/librmw_cyclonedds_cpp.so" \
+    "/opt/ros/${ROS_DISTRO}/lib/aarch64-linux-gnu/librmw_cyclonedds_cpp.so" \
+    "/usr/lib/librmw_cyclonedds_cpp.so" \
+    "/usr/lib/x86_64-linux-gnu/librmw_cyclonedds_cpp.so" \
+    "/usr/lib/aarch64-linux-gnu/librmw_cyclonedds_cpp.so"; do
+    if [ -f "${_lib_candidate}" ]; then
+        _cyclonedds_found=1
         break
     fi
 done
 
-if [ -z "$TARGET_PYTHON" ]; then
-    echo "❌ [tuina] Failed to locate a valid Python interpreter." >&2
+if [ "${_cyclonedds_found}" -eq 1 ]; then
+    export ROS_DOMAIN_ID="${ROS_DOMAIN_ID:-42}"
+    export RMW_IMPLEMENTATION="rmw_cyclonedds_cpp"
+    if [ -f "${REPO_ROOT}/scripts/env/cyclonedds.xml" ]; then
+        export CYCLONEDDS_URI="file://${REPO_ROOT}/scripts/env/cyclonedds.xml"
+    fi
+fi
+
+# 4. Select clean launcher Python (tuinadex_bringup.cli is 100% pure stdlib)
+# Prefer system /usr/bin/python3 so native Python 3.14 matches ROS 2 cleanly,
+# falling back cleanly if absent.
+TARGET_PYTHON=""
+if [ -x "/usr/bin/python3" ]; then
+    TARGET_PYTHON="/usr/bin/python3"
+elif command -v python3 >/dev/null 2>&1; then
+    TARGET_PYTHON="$(command -v python3)"
+elif [ -x "${HOME}/win_office/conda/envs/tuinadex-control/bin/python" ]; then
+    TARGET_PYTHON="${HOME}/win_office/conda/envs/tuinadex-control/bin/python"
+else
+    echo "[tuina ERROR] No usable python3 interpreter found." >&2
     exit 1
 fi
 
-# 4. Fix Boost / Pinocchio dynamic library priority for Python 3.10
-CONDA_DIR="$(dirname "$(dirname "$TARGET_PYTHON")")"
-CMEEL_LIB="${CONDA_DIR}/lib/python3.10/site-packages/cmeel.prefix/lib"
-if [ -d "$CMEEL_LIB" ]; then
-    export LD_LIBRARY_PATH="${CMEEL_LIB}:${CONDA_DIR}/lib:${LD_LIBRARY_PATH:-}"
+# Inject only tuinadex_bringup source path ahead of PYTHONPATH so local CLI
+# changes take effect immediately without contaminating C-extension site-packages.
+SRC_BRINGUP="${REPO_ROOT}/src/tuinadex_bringup"
+if [ -n "${PYTHONPATH:-}" ]; then
+    export PYTHONPATH="${SRC_BRINGUP}:${PYTHONPATH}"
+else
+    export PYTHONPATH="${SRC_BRINGUP}"
 fi
 
-# 5. Inject PYTHONPATH for source packages
-SRC_DIR="${REPO_ROOT}/src"
-export PYTHONPATH="${SRC_DIR}/tuinadex_bringup:${SRC_DIR}/tuinadex_core:${SRC_DIR}/tuinadex_teleop:${SRC_DIR}/tuinadex_sim:${SRC_DIR}/tuinadex_hand:${SRC_DIR}/tuinadex_arm:${SRC_DIR}/rebot_control:${REPO_ROOT}/dataset:${PYTHONPATH:-}"
-
-# 6. Execute Python CLI entrypoint
-exec "$TARGET_PYTHON" -m tuinadex_bringup.cli.main "$@"
+exec "${TARGET_PYTHON}" -m tuinadex_bringup.cli.main "$@"

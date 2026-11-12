@@ -32,10 +32,19 @@ cd /home/bright/win_office/ubantu_files/project/TuinaDex_v2.0
 # 5. 脱机安全 Mock 启动 (无物理硬件联调)
 ./bin/tuina launch --mock
 
-# 6. 一键启动 22D 仿真遥操交互预览 (带 3D 物理画面与 OpenCV HUD 仪表盘)
+# 6. 一键启动 16-DOF LEAP Hand 真实硬件视觉遥操作 (超低延迟串口直驱)
+./bin/tuina teleop hand --port /dev/ttyUSB0 --camera-id 4
+
+# 7. 一键启动 16-DOF 灵巧手 ROS 2 节点化真机遥操 (解耦发布 /hand/joint_command)
+./bin/tuina teleop hand --backend ros2 --camera-id 4
+
+# 8. 一键启动 22-DOF 臂手联合真机视觉遥操作 (Arm + Hand 协同真机遥操)
+./bin/tuina teleop composite --arm-channel can0 --hand-port /dev/ttyUSB0
+
+# 9. 一键启动 22D 仿真遥操交互预览 (带 3D 物理画面与 OpenCV HUD 仪表盘)
 ./bin/tuina teleop sim --mock
 
-# 7. 一键启动起飞前三合一标定向导 (桌面平面 + 手腕 IMU + 灵巧手活动度)
+# 10. 一键启动起飞前三合一标定向导 (桌面平面 + 手腕 IMU + 灵巧手活动度)
 ./bin/tuina teleop calibrate
 
 # 8. 一键启动 Web UI 数据采集工作台 (浏览器访问 http://localhost:8080)
@@ -80,66 +89,53 @@ ros2 launch tuinadex_bringup robot.launch.py mode:=arm_hand use_sim:=false mock:
 
 ## 1. 统一 CLI 体系结构 (`tuina`)
 
-`tuinadex_bringup` 下的 `cli/` 模块实现了统一命令行门面，提供清晰的子命令树与环境变量透传机制：
+`tuinadex_bringup` 下的 `cli/` 模块实现了系统级八大语义域 CLI 门面（全局软链 `~/.local/bin/tuina -> bin/tuina`），自动实施 **三运行时环境硬隔离 (`control` Python 3.10 / `vla` Python 3.10+CUDA / `ros2` Lyrical Python 3.14)** 与 **真机硬件前置自检 + 交互式急停确认门禁 (`-y`/`--yes`)**：
 
 ```mermaid
 flowchart TD
-    Root["tuina (CLI 总入口: ./bin/tuina 或 ros2 run tuinadex_bringup tuina)"]
+    Root["tuina [-y] [--dry-run] [--env-info] (系统级 CLI 总入口)"]
 
-    Root --> Launch["tuina launch (整机系统启动)"]
-    Root --> Teleop["tuina teleop (视-惯遥操与标定)"]
-    Root --> Collect["tuina collect (多模态数据采集)"]
-    Root --> Diag["--env-info / --dry-run (诊断与预检)"]
+    Root --> Launch["launch: 整机与单端 ROS2 启动 (robot / hand / arm / sim)"]
+    Root --> Teleop["teleop: 视-惯遥操作 (sim / hand / arm / composite / node / calibrate)"]
+    Root --> Collect["collect: 多模态数据采集 (hub / terminal / check)"]
+    Root --> Calibrate["calibrate: 一键与分项标定 (all / imu / hand / hand-limits / arm-ready / arm-goto)"]
+    Root --> Arm["arm: 6-DOF reBot 与 SocketCAN (cli / status / watch / zero / move / teach / can)"]
+    Root --> Hand["hand: 16-DOF LEAP Hand 工具集 (control / calibrate / diagnose / teleop)"]
+    Root --> Data["data: LeRobot v3.0 与 VLA 容器 (convert / convert-docker / vla-cloud / inspect)"]
+    Root --> Sys["sys: 运维/构建/测试/桥接 (env / verify / build / test / e2e / rosbridge / pub / probe / completion)"]
+```
 
-    Launch --> L_Sim["--sim: 启动 MuJoCo 动力学孪生 (带 3D 视窗或无头)"]
-    Launch --> L_Real["--real: 启动真实硬件驱动 (CAN + 串口)"]
-    Launch --> L_Mock["--mock: 启动脱机安全 Mock 节点"]
-
-    Teleop --> T_Sim["sim: 22D 实时遥操预览 (run_sim_teleop.py)"]
-    Teleop --> T_Calib["calibrate: 起飞前三合一标定 (00_preflight_calibration.py)"]
-    Teleop --> T_Node["node: 60Hz ROS 2 复合节点 (teleop_sim.launch.py)"]
-
-    Collect --> C_Hub["hub: Web UI 多模态采集工作台 (http://127.0.0.1:8080)"]
-    Collect --> C_Term["terminal: 纯终端多试次数据录制"]
-    Collect --> C_Check["check: 真实 EGL + H.264 端到端回归测试"]
+### Shell 自动补全 (Bash / Zsh)
+```bash
+# 查看安装单行指令并启用 Tab 补全
+tuina sys completion --install-hint --shell bash   # 或 --shell zsh
 ```
 
 ### `tuina` 子命令参数速查
 
-#### 1.1 `tuina launch` (整机系统级调度)
-将 `robot.launch.py` 的底层复杂参数提炼为开箱即用的语义选项：
-
+#### 1.1 `tuina launch` (整机与分系统级调度)
 | 参数选项 | 类型 | 默认值 | 作用与说明 |
 | :--- | :--- | :--- | :--- |
-| `--sim` | Flag | `True` (默认) | 启动 MuJoCo 动力学数字孪生仿真引擎 |
-| `--real` | Flag | `False` | 启动物理真机驱动（SocketCAN 机械臂 + Dynamixel 灵巧手） |
-| `--mock` | Flag | `False` | 启用脱机安全 Mock 驱动，绝不向物理总线写电 |
+| `--target` | Choice | `robot` | 启动目标：`robot`, `hand`, `arm`, `sim` |
+| `--sim` / `--real` / `--mock` | Flag | `--sim` | MuJoCo 仿真 / 物理真机（触发安全门禁）/ 脱机安全 Mock |
 | `--mode` | Choice | `arm_hand` | 自由度形态：`arm_hand` (22D), `hand_only` (16D), `arm_only` (6D) |
-| `--gui` / `--no-gui` | Flag | `--gui` | 仿真中是否弹出 MuJoCo 3D 交互视窗（`--no-gui` 为无头模式） |
-| `--record` | Flag | `False` | 是否同时拉起 `tuinadex_recorder_node` 录制话题至 `rosbag2` |
-| `--arm-channel` | String | `can0` | 机械臂通信 SocketCAN 接口名称 |
-| `--hand-port` | String | `/dev/ttyUSB0` | 灵巧手 U2D2 通信串口路径 |
-| `--rate-hz` | Float | `50.0` | 控制与状态发布基准主频 (Hz) |
-| `--watchdog-timeout` | Float | `0.30` | 指令失联超时安全回退时间 (s) |
+| `--gui` / `--no-gui` | Flag | `--gui` | 仿真中弹出 3D 视窗或无头后台运行 |
+| `--use-scene-world` / `--no-scene-world` | Flag | `None` | 是否加载推拿床与假人完整孪生场景 |
+| `--physics-substeps` | Int | `None` | MuJoCo 物理子步数 (`hand` / `sim` 目标) |
+| `--record` | Flag | `False` | 同时拉起 `tuinadex_recorder_node` 录制至 `rosbag2` |
+| `--arm-channel` / `--hand-port` | String | `can0` / `/dev/ttyUSB0` | 机械臂 SocketCAN 与灵巧手串口路径 |
+| `--rate-hz` / `--watchdog-timeout` | Float | `50.0` / `0.30` | 主控周期频率与看门狗超时回退时间 |
 
-#### 1.2 `tuina teleop` 与 `tuina collect`
-| 子命令 | 关键选项 | 默认值 | 作用说明 |
-| :--- | :--- | :--- | :--- |
-| `teleop sim` | `--mock` | `false` | 启用脱机模拟手势与测试轨迹 |
-| | `--no-gui` | `false` | 纯终端无头运行，禁用 OpenCV HUD 视窗 |
-| | `--solver-mode` | `hybrid` | 灵巧手解算器模式：`hybrid`, `geometric`, `dex_retargeting` |
-| | `--axis-mapping` | `-y,+x,+z` | 人手位姿至机械臂基座空间轴向映射 |
-| `teleop calibrate` | `--imu-only` | `false` | 仅对手腕 6 轴 IMU 进行 3 姿态正交零位标定 |
-| | `--camera-id` | `0` | RealSense 相机设备索引 |
-| | `--imu-port` | `/dev/ttyUSB0` | IMU 串口设备路径 |
-| `teleop node` | `--rate-hz` | `60.0` | 遥操作发布主频 (Hz) |
-| | `--camera-fps`| `60` | 相机采集帧率 (USB3 推荐 60，USB2 自动降频至 30) |
-| `collect hub` | `--env` | `sim` | 采集环境：`sim` (MuJoCo) 或 `real` (真实物理机) |
-| | `--mode` | `arm_hand` | 联合维度：`arm_hand` (22D) 或 `hand_only` (16D) |
-| | `--port` | `8080` | Web UI 工作台服务端口 |
-| | `--cameras` | `overhead,wrist,side` | 采集与推流相机列表 |
-| | `--fps` | `50` | 离线 LeRobotDataset 重采样基准帧率 |
-| `collect terminal`| `--episodes` | `1` | 连续采集并导出的试次数量 |
+#### 1.2 全域高阶域速查
+| 域 | 核心子命令示例 | 说明 |
+| :--- | :--- | :--- |
+| `teleop` | `tuina teleop sim --mock` / `composite --arm-channel can0` / `calibrate [--imu-only]` | 视-惯遥操（`calibrate` 默认 IMU `/dev/myimu` 且自动探测相机） |
+| `collect` | `tuina collect hub --env sim` / `terminal --env real --camera-map ...` / `check` | Web UI Hub、终端录制与 E2E 校验 |
+| `calibrate` | `tuina calibrate all` / `imu` / `hand` / `hand-limits` / `arm-ready` / `arm-goto` | 一键起飞前标定、手腕 IMU、灵巧手与机械臂姿态校准 |
+| `arm` | `tuina arm status` / `watch` / `move -j 1 -a 15` / `zero` / `can up --bitrate 1000000` | 6-DOF reBot 控制与 1Mbps SocketCAN 管理（高危命令带急停确认） |
+| `hand` | `tuina hand control` / `calibrate` / `diagnose` / `teleop` | 16-DOF LEAP Hand 工具集（保留 `leap-*` 兼容命令） |
+| `data` | `tuina data convert --bag ... --out ...` / `inspect <dir>` / `convert-docker` / `vla-cloud` | 严格路由至 `tuinadex-vla` 隔离转换与检视 |
+| `sys` | `tuina sys env` / `verify` / `build` / `test --suite teleop` / `e2e --suite unified` / `rosbridge` | 全系统环境检查、编译、分域单测、E2E 与桥接运维 |
 
 ---
 

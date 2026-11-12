@@ -117,6 +117,12 @@ flowchart TD
 
 ### 4.1 统一 CLI 控制台启动 (极简免配置 · 推荐)
 仓库自带自动环境感知启动脚本 `./bin/tuina`（自动处理 Conda 环境、CycloneDDS 与动态链接库）：
+```bash
+# 0: 激活 Linux SocketCAN 接口 (1 Mbps，波特率必须为 1000000)
+sudo ip link set can0 down 2>/dev/null || true
+sudo ip link set can0 up type can bitrate 1000000
+ip -details link show can0   # 确认输出状态为 state UP，bitrate 1000000
+```
 
 ```bash
 cd /home/bright/win_office/ubantu_files/project/TuinaDex_v2.0
@@ -127,8 +133,11 @@ cd /home/bright/win_office/ubantu_files/project/TuinaDex_v2.0
 # 2. 纯后台无头模式运行仿真 (适用于 CI、录制与自动化测试)
 ./bin/tuina launch --sim --no-gui
 
-# 3. 启动真实物理机器人驱动 (SocketCAN + 串口)
+# 3. 启动真实物理机器人驱动 (通信前置需激活 can0: sudo ip link set can0 up type can bitrate 1000000)
 ./bin/tuina launch --real --arm-channel can0 --hand-port /dev/ttyUSB0
+
+# 3.1 启动真实机械臂视-惯协同遥操 (若暂无手腕 IMU 则加 --no-imu)
+./bin/tuina teleop real --no-imu
 
 # 4. 启动起飞前三合一交互式标定向导 (桌面平面 + 手腕 IMU + 灵巧手活动度)
 ./bin/tuina teleop calibrate
@@ -170,6 +179,12 @@ ros2 launch tuinadex_bringup robot.launch.py mode:=arm_hand use_sim:=true gui:=f
 > 实体上电前必须确认机械臂急停开关 (E-Stop) 就位，确认串口 `/dev/ttyUSB0` 与 CAN 接口 `can0` 通信正常！
 
 ```bash
+# 步骤 0: 激活并配置 Linux SocketCAN 接口 (1 Mbps，波特率必须为 1000000)
+sudo ip link set can0 down 2>/dev/null || true
+sudo ip link set can0 up type can bitrate 1000000
+ip -details link show can0
+
+# 步骤 1: 启动真实机器人协同运行
 ros2 launch tuinadex_bringup robot.launch.py mode:=arm_hand use_sim:=false arm_channel:=can0 hand_port:=/dev/ttyUSB0
 ```
 
