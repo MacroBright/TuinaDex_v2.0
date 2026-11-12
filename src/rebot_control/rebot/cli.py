@@ -412,9 +412,11 @@ def run_watch_oneshot(config_path: str | None, joint: int | None = None, hz: flo
             print(f"正在以 ~{hz:.0f}Hz 刷新所有关节角度，按 Ctrl+C 退出...\n")
 
         init_angles = None
+        last_actual = None
         while True:
             t0 = time.monotonic()
             actual = arm.read_joint_angles()
+            last_actual = actual
             if init_angles is None:
                 init_angles = actual
 
@@ -441,6 +443,16 @@ def run_watch_oneshot(config_path: str | None, joint: int | None = None, hz: flo
         return 1
     finally:
         arm.stop(return_to_zero=False, wait=True)
+
+    if last_actual is not None and len(last_actual) >= 6:
+        deg_vals = [round(float(x), 2) for x in last_actual[:6]]
+        print("\n" + "=" * 65)
+        print("  【当前停留姿态记录 (SNAPSHOT)】")
+        print(f"  角度 (deg): {deg_vals}")
+        print("  ready_pose_deg:")
+        for idx, val in enumerate(deg_vals, start=1):
+            print(f"    joint{idx}: {val:.2f}")
+        print("=" * 65 + "\n")
     return 0
 
 

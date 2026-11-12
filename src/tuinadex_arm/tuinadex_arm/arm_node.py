@@ -40,7 +40,7 @@ class ArmNode(Node):
         declare("control_rate_hz", 50.0)
         declare("watchdog_timeout_sec", 0.30)
         declare("watchdog_hold_sec", 0.30)
-        declare("watchdog_ramp_sec", 0.60)
+        declare("watchdog_ramp_sec", 2.50)
         declare("shutdown_dwell_sec", 0.5)
         declare("mock_mode", False)
 
@@ -156,30 +156,35 @@ class ArmNode(Node):
         self.state_pub.publish(state_msg)
 
     def destroy_node(self) -> None:
-        self.get_logger().info("安全退出: 停止机械臂控制循环, 回零位, 等待到位后断开...")
+        self.get_logger().info("安全退出: 停止机械臂控制循环, 安全断开硬件连接...")
         if self.timer is not None:
             self.timer.cancel()
         try:
-            self.driver.set_home()
-            time.sleep(self.dwell_sec)
             self.driver.disconnect()
-        except Exception as e:
+        except BaseException as e:
             self.get_logger().warning(f"机械臂关停清理异常: {e}")
         super().destroy_node()
 
 
 def main(args=None):
     rclpy.init(args=args)
+    node = None
     try:
         node = ArmNode()
         rclpy.spin(node)
-    except SystemExit:
-        pass
-    except KeyboardInterrupt:
+    except (SystemExit, KeyboardInterrupt):
         pass
     finally:
+        if node is not None:
+            try:
+                node.destroy_node()
+            except BaseException:
+                pass
         if rclpy.ok():
-            rclpy.shutdown()
+            try:
+                rclpy.shutdown()
+            except BaseException:
+                pass
 
 
 if __name__ == "__main__":

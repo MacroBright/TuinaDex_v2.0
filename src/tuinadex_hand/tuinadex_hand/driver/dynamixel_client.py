@@ -3,7 +3,7 @@
 import atexit
 import logging
 import time
-from typing import Optional, Sequence, Union, Tuple
+from typing import List, Optional, Sequence, Union, Tuple
 
 import numpy as np
 
@@ -145,7 +145,9 @@ class DynamixelClient:
 
     @property
     def is_connected(self) -> bool:
-        return self.port_handler.is_open
+        if not hasattr(self, 'port_handler') or self.port_handler is None:
+            return False
+        return getattr(self.port_handler, 'is_open', False)
 
     def connect(self):
         """Connects to the Dynamixel motors.
@@ -176,12 +178,18 @@ class DynamixelClient:
         """Disconnects from the Dynamixel device."""
         if not self.is_connected:
             return
-        if self.port_handler.is_using:
+        if getattr(self.port_handler, 'is_using', False):
             logging.error('Port handler in use; cannot disconnect.')
             return
         # Ensure motors are disabled at the end.
-        self.set_torque_enabled(self.motor_ids, False, retries=0)
-        self.port_handler.closePort()
+        try:
+            self.set_torque_enabled(self.motor_ids, False, retries=0)
+        except Exception:
+            pass
+        try:
+            self.port_handler.closePort()
+        except Exception:
+            pass
         if self in self.OPEN_CLIENTS:
             self.OPEN_CLIENTS.remove(self)
 
@@ -189,7 +197,7 @@ class DynamixelClient:
                            motor_ids: Sequence[int],
                            enabled: bool,
                            retries: int = -1,
-                           retry_interval: float = 0.25):
+                           retry_interval: float = 0.25) -> List[int]:
         """Sets whether torque is enabled for the motors.
 
         Args:
@@ -198,22 +206,29 @@ class DynamixelClient:
             retries: The number of times to retry. If this is <0, will retry
                 forever.
             retry_interval: The number of seconds to wait between retries.
+
+        Returns:
+            List of motor IDs that failed to set torque.
         """
         remaining_ids = list(motor_ids)
+        attempts = 0
         while remaining_ids:
             remaining_ids = self.write_byte(
                 remaining_ids,
                 int(enabled),
                 ADDR_TORQUE_ENABLE,
             )
-            if remaining_ids:
-                logging.error('Could not set torque %s for IDs: %s',
-                              'enabled' if enabled else 'disabled',
-                              str(remaining_ids))
-            if retries == 0:
+            if not remaining_ids:
                 break
+            logging.error('Could not set torque %s for IDs: %s',
+                          'enabled' if enabled else 'disabled',
+                          str(remaining_ids))
+            if retries >= 0:
+                attempts += 1
+                if attempts > retries:
+                    break
             time.sleep(retry_interval)
-            retries -= 1
+        return remaining_ids
 
     def read_pos_vel_cur(self) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
         """Returns the current positions and velocities."""
@@ -354,7 +369,10 @@ class DynamixelClient:
 
     def __del__(self):
         """Automatically disconnect on destruction."""
-        self.disconnect()
+        try:
+            self.disconnect()
+        except Exception:
+            pass
 
 
 class DynamixelReader:
@@ -389,12 +407,14 @@ class DynamixelReader:
         while not success and retries >= 0:
             try:
                 comm_result = self.operation.fastSyncRead()
-            except:
+            except Exception:
                 comm_result = self.operation.txRxPacket()
-                print("Update your Dynamixel_SDK from Github faster reads!")
-            success = self.client.handle_packet_result(
-                comm_result, context='read')
-            retries -= 1
+            if comm_result == self.client.dxl.COMM_SUCCESS:
+                success = True
+            else:
+                retries -= 1
+                if retries < 0:
+                    self.client.handle_packet_result(comm_result, context='read')
 
         # If we failed, send a copy of the previous data.
         if not success:

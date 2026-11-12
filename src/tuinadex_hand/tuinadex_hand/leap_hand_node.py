@@ -51,6 +51,7 @@ class LeapHandNode(Node):
         self.ramp_sec = float(gp("watchdog_ramp_sec"))
         self.dwell_sec = float(gp("shutdown_dwell_sec"))
 
+        self.timer = None
         self.driver = LeapHandDriver(
             port=str(gp("port")), baudrate=int(gp("baudrate")),
             kP=int(gp("kP")), kI=int(gp("kI")), kD=int(gp("kD")),
@@ -125,14 +126,15 @@ class LeapHandNode(Node):
     def destroy_node(self) -> None:
         """安全关停序列: 停定时器 -> 全开指令 -> dwell 等待到位 -> 断开."""
         self.get_logger().info("安全退出: 停止控制循环, 回全开位, 等待到位后断开...")
-        if self.timer is not None:
+        if getattr(self, "timer", None) is not None:
             self.timer.cancel()
-        try:
-            self.driver.set_open()
-            time.sleep(self.dwell_sec)   # 让电机实际走到全开位
-            self.driver.disconnect()
-        except Exception as e:
-            self.get_logger().warning(f"关停清理异常: {e}")
+        if getattr(self, "driver", None) is not None and getattr(self.driver, "_is_connected", False):
+            try:
+                self.driver.set_open()
+                time.sleep(self.dwell_sec)   # 让电机实际走到全开位
+                self.driver.disconnect()
+            except Exception as e:
+                self.get_logger().warning(f"关停清理异常: {e}")
         super().destroy_node()
 
 

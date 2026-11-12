@@ -33,13 +33,13 @@ def test_coordinate_transform_invariants():
     """验证双向数学转换契约: 0 rad -> OPEN_POSE, OPEN_POSE -> 0 rad."""
     driver = LeapHandDriver(mock_mode=True)
     
-    # 1. 0 rad (全开位) -> 舵机绝对弧度必须精确等于 OPEN_POSE
+    # 1. 0 rad (全开位) -> 舵机绝对弧度必须精确等于 driver.open_pose
     zero_cmd = np.zeros(16, dtype=np.float64)
     dxl_target = driver.robot_joint_to_hardware_dxl(zero_cmd)
-    np.testing.assert_allclose(dxl_target, DEFAULT_OPEN_POSE, atol=1e-5)
+    np.testing.assert_allclose(dxl_target, driver.open_pose, atol=1e-5)
 
     # 2. 舵机绝对弧度 OPEN_POSE -> 转换回关节空间必须精确等于 0 rad
-    q_recovered = driver.hardware_dxl_to_robot_joint(DEFAULT_OPEN_POSE)
+    q_recovered = driver.hardware_dxl_to_robot_joint(driver.open_pose)
     np.testing.assert_allclose(q_recovered, zero_cmd, atol=1e-5)
 
 
@@ -53,10 +53,10 @@ def test_positive_flexion_direction():
     
     # 前 12 轴 JOINT_DIR 为 -1，舵机值应减小
     for i in range(12):
-        assert dxl_target[i] < DEFAULT_OPEN_POSE[i]
+        assert dxl_target[i] < driver.open_pose[i]
     
     # 拇指根部 JOINT_DIR 为 +1，舵机值应增大
-    assert dxl_target[12] > DEFAULT_OPEN_POSE[12]
+    assert dxl_target[12] > driver.open_pose[12]
 
     # 双向还原一致性
     q_recovered = driver.hardware_dxl_to_robot_joint(dxl_target)

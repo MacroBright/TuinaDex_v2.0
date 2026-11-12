@@ -14,6 +14,7 @@ from typing import List, Optional, Sequence, Tuple
 import numpy as np
 
 from tuinadex_core.names import CANONICAL_JOINT_NAMES
+from tuinadex_hand.core.pose_manager import load_poses, get_default_config_path, is_valid_pose
 
 # 舵机驱动方向符号映射表 (针对 LEAP Hand 右手 16 舵机)
 # 关节空间弯曲为正，对应舵机实际运动方向
@@ -34,17 +35,17 @@ DEFAULT_OPEN_POSE = np.array([
 
 # 默认舵机物理极限 (绝对弧度 rad，来自真机标定全局边界)
 DEFAULT_DXL_LIMITS_MIN = np.array([
-    2.50, 2.00, 1.00, -0.30,
-    2.50, 1.00, 1.00,  2.50,
-    2.50, 1.00, 1.00,  2.50,
-    2.50, -0.30, 2.50,  2.50
+    2.3517, 3.3196, 2.3133, -0.5706,
+    2.5772, 1.7795, 0.7609,  2.6063,
+    2.5787, 1.4021, 0.7149,  2.4775,
+    2.5986, 2.8610, 1.2073,  2.2826
 ], dtype=np.float64)
 
 DEFAULT_DXL_LIMITS_MAX = np.array([
-    3.80, 5.20, 3.80, 2.00,
-    3.80, 3.80, 3.80, 5.20,
-    3.80, 3.80, 3.80, 5.20,
-    4.50, 2.50, 5.20, 5.80
+    3.6232, 5.4287, 5.2400,  2.1107,
+    3.8211, 3.7321, 3.7827,  5.2461,
+    4.1202, 3.7413, 3.7873,  5.1832,
+    4.8274, 5.0958, 4.1263,  6.2095
 ], dtype=np.float64)
 
 
@@ -77,10 +78,34 @@ class LeapHandDriver:
         self.curr_lim = curr_lim
         self.mock_mode = mock_mode
 
-        self.open_pose = open_pose.copy() if open_pose is not None else DEFAULT_OPEN_POSE.copy()
+        # 优先读取实测姿态库配置中的全开位
+        if open_pose is not None:
+            self.open_pose = open_pose.copy()
+        else:
+            loaded_poses, is_valid = load_poses()
+            if is_valid and "全开/平伸" in loaded_poses and is_valid_pose(loaded_poses["全开/平伸"]):
+                self.open_pose = np.asarray(loaded_poses["全开/平伸"], dtype=np.float64).copy()
+            else:
+                self.open_pose = DEFAULT_OPEN_POSE.copy()
+
         self.joint_dir = joint_dir.copy() if joint_dir is not None else DEFAULT_JOINT_DIR.copy()
-        self.motor_limits_min = DEFAULT_DXL_LIMITS_MIN.copy()
-        self.motor_limits_max = DEFAULT_DXL_LIMITS_MAX.copy()
+
+        # 优先读取实测物理限位配置
+        limits_file = get_default_config_path("motor_limits.json")
+        loaded_limits = False
+        if limits_file.exists():
+            try:
+                import json
+                with open(limits_file, "r", encoding="utf-8") as f:
+                    lim_data = json.load(f)
+                self.motor_limits_min = np.array(lim_data["min"], dtype=np.float64)
+                self.motor_limits_max = np.array(lim_data["max"], dtype=np.float64)
+                loaded_limits = True
+            except Exception:
+                pass
+        if not loaded_limits:
+            self.motor_limits_min = DEFAULT_DXL_LIMITS_MIN.copy()
+            self.motor_limits_max = DEFAULT_DXL_LIMITS_MAX.copy()
 
         self.motor_ids = list(range(16))
         self.dxl_client = None
@@ -137,8 +162,13 @@ class LeapHandDriver:
             self.dxl_client.sync_write(self.motor_ids, np.zeros(16), 9, 1)
             # 位置-电流模式 (Operating Mode = 5)
             self.dxl_client.sync_write(self.motor_ids, np.ones(16) * 5, 11, 1)
-            # 使能力矩
-            self.dxl_client.set_torque_enabled(self.motor_ids, True)
+            # 使能力矩 (重试 2 次，防未供电死锁)
+            failed_ids = self.dxl_client.set_torque_enabled(self.motor_ids, True, retries=2)
+            if failed_ids:
+                raise ConnectionError(
+                    f"16 个舵机无响应或无法使能 (未响应 ID: {failed_ids})！"
+                    "请检查: 1. LEAP Hand 12V 独立供电电源是否开启; 2. U2D2 与舵机总线排线是否插紧。"
+                )
 
             # 配置 PID 与侧摆差异化阻尼
             self.dxl_client.sync_write(self.motor_ids, np.ones(16) * self.kP, 84, 2)
@@ -149,9 +179,14 @@ class LeapHandDriver:
             # 写入限流 (单位 1mA)
             self.dxl_client.sync_write(self.motor_ids, np.ones(16) * self.curr_lim, 102, 2)
 
+            self._is_connected = True
+            # 读取当前物理状态
+            try:
+                self.read_states()
+            except Exception:
+                pass
             # 初始到位全开位 (0 rad)
             self.set_open()
-            self._is_connected = True
             logging.info(f"[LeapHandDriver] Connected on {self.port} at {self.baudrate} bps.")
             return True
         except Exception as e:

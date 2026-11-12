@@ -949,7 +949,7 @@ class ReBotRSMITController:
                 self.shutdown_thread = threading.Thread(
                     target=self._shutdown_worker,
                     name="rebot-rs-safe-shutdown",
-                    daemon=True,
+                    daemon=False,
                 )
                 self.shutdown_thread.start()
 
@@ -959,7 +959,22 @@ class ReBotRSMITController:
             and threading.current_thread()
             is not self.shutdown_thread
         ):
-            self.shutdown_done_event.wait()
+            try:
+                self.shutdown_done_event.wait()
+            except (KeyboardInterrupt, BaseException):
+                # 收到 Ctrl+C 或强行信号中断，立即停止回零并强制失能电机
+                print(
+                    "\n[Exit / 退出] 关机回零被用户中断 (Ctrl+C)，"
+                    "立即中止运动并强制失能所有电机..."
+                )
+                self.abort_return_event.set()
+                self.worker_stop_event.set()
+                if self.shutdown_thread is not None and self.shutdown_thread.is_alive():
+                    self.shutdown_thread.join(timeout=2.0)
+                try:
+                    self._disable_and_close()
+                except Exception:
+                    pass
 
     def stop(
         self,
@@ -1048,11 +1063,15 @@ class ReBotRSMITController:
 
     def _safe_return_to_zero(self) -> None:
         """Use a smoothstep trajectory to slowly return all joints to zero.
-        使用 smoothstep 轨迹缓慢返回全部关节零点。"""
+        使用 smoothstep 轨迹缓慢返回全部关节零点。
+
+        针对 6-DOF 机械臂优化分步时序规划 (防止手腕 J5 被下压的小臂 J3 机械结构卡住):
+        - 阶段 1: J5, J6 (手腕与末端) 优先平滑归零并回正展开
+        - 阶段 2: J1-J4 (机械臂主体) 随后缓慢平滑归零
+        """
 
         try:
             start_positions = self._read_positions_rad()
-
         except Exception as error:
             print(
                 "[Return-to-zero / 回零] Cannot read actual angles, "
@@ -1060,159 +1079,112 @@ class ReBotRSMITController:
                 " / 无法读取实际角度，"
                 f"改用当前发送角度：{error}"
             )
-
             with self.target_lock:
-                start_positions = (
-                    self.command_positions.copy()
-                )
-
-        target_positions = [
-            0.0 for _ in self.config.motors
-        ]
+                start_positions = self.command_positions.copy()
 
         return_zero_config = self.config.return_zero
-
         speed_deg_s = (
             return_zero_config.thermal_max_speed_deg_s
             if self.thermal_return_requested
             else return_zero_config.max_speed_deg_s
         )
 
-        # The maximum slope of smoothstep is 1.5. / smoothstep 的最大斜率为 1.5。
-        required_times = [
-            (
-                1.5
-                * abs(math.degrees(position))
-                / speed_deg_s
-            )
-            for position in start_positions
-        ]
-
-        duration_s = max(
-            return_zero_config.min_time_s,
-            *required_times,
-        )
-
-        steps = max(
-            2,
-            int(round(duration_s * self.control_hz)),
-        )
-
-        print(
-            "[Return-to-zero / 回零] Slowly returning to zero: "
-            f"estimated {duration_s:.1f} s, "
-            f"peak speed no more than {speed_deg_s:.1f}°/s"
-            " / 正在缓慢回零："
-            f"预计 {duration_s:.1f} 秒，"
-            f"峰值速度不超过 {speed_deg_s:.1f}°/s"
-        )
-        print(
-            "[Return-to-zero / 回零] Press Ctrl+C again to abort immediately"
-            " / 再次按 Ctrl+C 可立即中止回零"
-        )
-
-        period = 1.0 / self.control_hz
-        next_tick = time.perf_counter()
         last_thermal_check = -float("inf")
+
+        def _run_stage(start_vec: List[float], target_vec: List[float], duration: float, stage_name: str) -> bool:
+            steps = max(2, int(round(duration * self.control_hz)))
+            print(
+                f"[Return-to-zero / 回零] {stage_name}: "
+                f"预计 {duration:.1f} 秒，峰值速度不超过 {speed_deg_s:.1f}°/s"
+            )
+            period = 1.0 / self.control_hz
+            next_tick = time.perf_counter()
+            nonlocal last_thermal_check
+
+            for step_index in range(1, steps + 1):
+                if self.abort_return_event.is_set():
+                    print("\n[Return-to-zero / 回零] Return-to-zero aborted by user / 用户中止回零")
+                    return False
+
+                now = time.monotonic()
+                if self.thermal_return_requested and now - last_thermal_check >= 1.0 / self.telemetry_hz:
+                    last_thermal_check = now
+                    temperatures = self._read_temperatures_once()
+                    valid_temperatures = [(index, temp) for index, temp in enumerate(temperatures) if temp is not None]
+                    if valid_temperatures:
+                        hottest_index, hottest_temp = max(valid_temperatures, key=lambda item: item[1])
+                        if hottest_temp >= self.temp_disconnect_c:
+                            motor_id = self.config.motors[hottest_index].motor_id
+                            print(
+                                f"\n[Emergency disconnect / 紧急断开] During return-to-zero motor {motor_id} MOS={hottest_temp:.1f}°C, "
+                                "aborting return-to-zero immediately"
+                            )
+                            return False
+
+                alpha = self._smoothstep(step_index / steps)
+                commands = [
+                    start + alpha * (target - start)
+                    for start, target in zip(start_vec, target_vec)
+                ]
+
+                try:
+                    self._send_mit_positions(commands, lock_timeout=self._IO_LOCK_SHUTDOWN_TIMEOUT_S)
+                except TimeoutError as error:
+                    print(f"\n[Return-to-zero / 回零] I/O lock timeout, aborting return-to-zero: {error}")
+                    return False
+
+                with self.target_lock:
+                    self.command_positions[:] = commands
+                    self.target_positions[:] = commands
+
+                next_tick += period
+                sleep_time = next_tick - time.perf_counter()
+                if sleep_time > 0:
+                    time.sleep(sleep_time)
+
+            return True
 
         completed = True
 
-        for step_index in range(1, steps + 1):
-            if self.abort_return_event.is_set():
-                print(
-                    "\n[Return-to-zero / 回零] Return-to-zero aborted by user"
-                    " / 用户中止回零"
-                )
-                completed = False
-                break
+        # 检查是否为 6 轴及以上机械臂，启用分步归零防卡手策略
+        if len(start_positions) >= 6:
+            # 阶段 1: 手腕与末端 (J4, J5, J6) 优先平滑归零展开，J1~J3 机械臂主体保持当前高位不变
+            stage1_targets = list(start_positions)
+            stage1_targets[3] = 0.0  # J4 (手腕俯仰/旋转轴)
+            stage1_targets[4] = 0.0  # J5 (手腕侧摆/偏航轴)
+            stage1_targets[5] = 0.0  # J6 (手腕翻转轴)
+            wrist_angles_deg = [abs(math.degrees(start_positions[i])) for i in (3, 4, 5)]
+            max_wrist_deg = max(wrist_angles_deg)
+            req_time_s1 = 1.5 * max_wrist_deg / speed_deg_s
+            duration_s1 = max(1.5, req_time_s1) if max_wrist_deg > 0.5 else 0.2
 
-            now = time.monotonic()
-
-            # Keep checking the emergency disconnect threshold during a thermal return-to-zero.
-            # 高温回零过程中继续检查紧急断开阈值。
-            if (
-                self.thermal_return_requested
-                and now - last_thermal_check
-                >= 1.0 / self.telemetry_hz
-            ):
-                last_thermal_check = now
-
-                temperatures = (
-                    self._read_temperatures_once()
-                )
-
-                valid_temperatures = [
-                    (index, temp)
-                    for index, temp
-                    in enumerate(temperatures)
-                    if temp is not None
-                ]
-
-                if valid_temperatures:
-                    hottest_index, hottest_temp = max(
-                        valid_temperatures,
-                        key=lambda item: item[1],
-                    )
-
-                    if (
-                        hottest_temp
-                        >= self.temp_disconnect_c
-                    ):
-                        motor_id = self.config.motors[
-                            hottest_index
-                        ].motor_id
-
-                        print(
-                            "\n[Emergency disconnect / 紧急断开] During return-to-zero "
-                            f"motor {motor_id} MOS="
-                            f"{hottest_temp:.1f}°C, "
-                            "aborting return-to-zero immediately / "
-                            "回零过程中 "
-                            f"电机 {motor_id} MOS="
-                            f"{hottest_temp:.1f}°C，"
-                            "立即中止回零"
-                        )
-                        completed = False
-                        break
-
-            alpha = self._smoothstep(
-                step_index / steps
+            print(
+                "[Return-to-zero / 回零] 阶段 1/2: 手腕与末端关节 (J4-J6) 优先平滑归零展开 (防止小臂下压卡手)..."
             )
+            completed = _run_stage(start_positions, stage1_targets, duration_s1, "阶段 1 (J4-J6 优先归零)")
 
-            commands = [
-                start
-                + alpha * (target - start)
-                for start, target in zip(
-                    start_positions,
-                    target_positions,
-                )
-            ]
+            if completed:
+                time.sleep(0.2)  # 阶段间微停顿缓冲，消除末端晃动
+                # 阶段 2: J1~J3 机械臂主体随后平滑归零，J4-J6 保持在 0.0
+                stage2_start = list(stage1_targets)
+                stage2_targets = [0.0 for _ in self.config.motors]
+                arm_angles_deg = [abs(math.degrees(stage2_start[i])) for i in range(3)]
+                req_time_s2 = max((1.5 * deg / speed_deg_s) for deg in arm_angles_deg) if arm_angles_deg else 0.0
+                duration_s2 = max(return_zero_config.min_time_s, req_time_s2)
 
-            try:
-                self._send_mit_positions(
-                    commands,
-                    lock_timeout=self._IO_LOCK_SHUTDOWN_TIMEOUT_S,
-                )
-            except TimeoutError as error:
                 print(
-                    "\n[Return-to-zero / 回零] I/O lock timeout, "
-                    f"aborting return-to-zero: {error}"
-                    " / I/O 锁超时，"
-                    f"中止回零：{error}"
+                    "[Return-to-zero / 回零] 阶段 2/2: 机械臂主体关节 (J1-J3) 随后平滑折叠归零..."
                 )
-                completed = False
-                break
+                completed = _run_stage(stage2_start, stage2_targets, duration_s2, "阶段 2 (J1-J3 随后归零)")
 
-            with self.target_lock:
-                self.command_positions[:] = commands
-                self.target_positions[:] = commands
+        else:
+            # 兼容非 6 轴测试模式: 全关节同步归零
+            target_positions = [0.0 for _ in self.config.motors]
+            required_times = [(1.5 * abs(math.degrees(p)) / speed_deg_s) for p in start_positions]
+            duration_s = max(return_zero_config.min_time_s, *required_times)
+            completed = _run_stage(start_positions, target_positions, duration_s, "全关节平滑归零")
 
-            next_tick += period
-            sleep_time = next_tick - time.perf_counter()
-
-            if sleep_time > 0:
-                time.sleep(sleep_time)
-
+        target_positions = [0.0 for _ in self.config.motors]
         if completed:
             try:
                 self._send_mit_positions(
