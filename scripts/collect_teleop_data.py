@@ -264,10 +264,12 @@ def run_hub_session(args, config: RobotConfig):
     sub_node = None
     home_pub = None
     hand_hold_pub = None
+    clutch_pub = None
     bridge_proc = None
     stop_rx = threading.Event()
     _cmd_rx_count = 0
     hand_hold_state = {"enabled": False, "q": np.zeros(16, dtype=np.float32)}
+    clutch_state = {"engaged": False}
 
     # 1. Fast UDP command & state listeners (seamless across Python 3.10 & 3.14)
     import socket, struct, subprocess
@@ -313,6 +315,16 @@ def run_hub_session(args, config: RobotConfig):
             while not stop_rx.is_set():
                 try:
                     data, _ = sock.recvfrom(256)
+                    if data == b"CLUTCH_STATE:1":
+                        clutch_state["engaged"] = True
+                        if 'controller' in locals() and controller is not None:
+                            controller.set_clutch_state(True)
+                        continue
+                    elif data == b"CLUTCH_STATE:0":
+                        clutch_state["engaged"] = False
+                        if 'controller' in locals() and controller is not None:
+                            controller.set_clutch_state(False)
+                        continue
                     if len(data) >= 180 and data[:4] == b"TS22":
                         vals = struct.unpack("<4s22f22f", data[:180])[1:]
                         with lock:
@@ -383,9 +395,18 @@ def run_hub_session(args, config: RobotConfig):
         from std_msgs.msg import Bool, Empty
         home_pub = sub_node.create_publisher(Empty, "/teleop/home", 10)
         hand_hold_pub = sub_node.create_publisher(Bool, "/teleop/hand_hold", 10)
+        clutch_pub = sub_node.create_publisher(Bool, "/teleop/clutch", 10)
+
+        def _clutch_state_cb(msg: Bool):
+            is_eng = bool(msg.data)
+            clutch_state["engaged"] = is_eng
+            if 'controller' in locals() and controller is not None:
+                controller.set_clutch_state(is_eng)
+
+        sub_node.create_subscription(Bool, "/teleop/clutch_state", _clutch_state_cb, 10)
         spin_thread = threading.Thread(target=rclpy.spin, args=(sub_node,), daemon=True)
         spin_thread.start()
-        logger.info("Connected to ROS 2 command topics (/arm/joint_command, /hand/joint_command, /teleop/home)")
+        logger.info("Connected to ROS 2 command topics (/arm/joint_command, /hand/joint_command, /teleop/home, /teleop/clutch)")
     except Exception as exc:
         logger.info(f"Direct rclpy unavailable ({exc}); auto-launching background ROS 2 bridge via system python...")
         try:
@@ -402,6 +423,7 @@ def run_hub_session(args, config: RobotConfig):
     def _do_home():
         ready_arm_q = _load_ready_arm_q_from_config()
         with lock:
+            clutch_state["engaged"] = False
             hand_hold_state["enabled"] = False
             if hasattr(config, "action_dim") and config.action_dim >= 22:
                 commanded["q"][:6] = ready_arm_q.copy()
@@ -457,6 +479,43 @@ def run_hub_session(args, config: RobotConfig):
                 logger.debug(f"Failed to publish /teleop/hand_hold: {e}")
         logger.info(f"[HAND_HOLD] Hand action hold -> {'LOCKED' if enabled else 'FOLLOW'}")
 
+    def _do_clutch(enabled: bool | None = None):
+        with lock:
+            if enabled is None:
+                clutch_state["engaged"] = not clutch_state.get("engaged", False)
+            else:
+                clutch_state["engaged"] = bool(enabled)
+            is_eng = clutch_state["engaged"]
+            if adapter is not None:
+                now = time.monotonic()
+                cmd = TeleopCommand(
+                    timestamp=now,
+                    arm_command=TeleopArmCommand(
+                        timestamp=now,
+                        target_pose=np.eye(4),
+                        target_q=commanded["q"][:6].copy() if len(commanded["q"]) >= 6 else np.zeros(6, dtype=np.float32),
+                    ),
+                    hand_command=TeleopHandCommand(
+                        timestamp=now,
+                        target_q=commanded["q"][6:22].copy() if len(commanded["q"]) >= 22 else np.zeros(16, dtype=np.float32),
+                    ),
+                    clutch_state=ClutchState.ENGAGED if is_eng else ClutchState.DISENGAGED,
+                )
+                adapter.send_command(cmd)
+        try:
+            h_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            h_sock.sendto(b"CLUTCH:1" if is_eng else b"CLUTCH:0", ("127.0.0.1", 9877))
+            h_sock.close()
+        except Exception:
+            pass
+        if sub_node is not None and clutch_pub is not None:
+            try:
+                from std_msgs.msg import Bool
+                clutch_pub.publish(Bool(data=is_eng))
+            except Exception as e:
+                logger.debug(f"Failed to publish /teleop/clutch: {e}")
+        logger.info(f"[CLUTCH] Teleoperation clutch -> {'ENGAGED (FOLLOW)' if is_eng else 'DISENGAGED (LOCKED)'}")
+
     def _do_axis_cycle():
         try:
             h_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -493,6 +552,7 @@ def run_hub_session(args, config: RobotConfig):
     )
     controller.on_home = _do_home
     controller.on_hand_hold = _do_hand_hold
+    controller.on_clutch = _do_clutch
     controller.on_axis_cycle = _do_axis_cycle
     controller.on_imu_axes_cycle = _do_imu_axes_cycle
 

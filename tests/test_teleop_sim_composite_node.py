@@ -551,3 +551,63 @@ def test_draw_simulation_hud_titles_distinguish_sim_and_real():
     )
     assert hud_real.shape == (480, 640 + 640, 3)
 
+
+def test_teleop_sim_composite_node_remote_clutch_control(rclpy_init):
+    """Verify clutch control via remote command (_set_pending_clutch) and broadcast synchronization."""
+    from rclpy.parameter import Parameter
+    from tuinadex_teleop.core.types import ClutchState
+    from tuinadex_teleop.perception.wrist_tracker import TrackingState
+    from std_msgs.msg import Bool
+
+    overrides = [
+        Parameter("mock", Parameter.Type.BOOL, True),
+        Parameter("no_imu", Parameter.Type.BOOL, True),
+        Parameter("no_safety", Parameter.Type.BOOL, True),
+        Parameter("use_sim", Parameter.Type.BOOL, False),
+        Parameter("auto_engage", Parameter.Type.BOOL, False),
+        Parameter("publish_rate_hz", Parameter.Type.DOUBLE, 60.0),
+    ]
+    node = TeleopSimCompositeNode(parameter_overrides=overrides)
+    sub_node = rclpy.create_node("teleop_clutch_sync_test_sub")
+    clutch_states_received = []
+    sub_node.create_subscription(Bool, "/teleop/clutch_state", lambda msg: clutch_states_received.append(bool(msg.data)), 10)
+
+    try:
+        assert node.clutch.state == ClutchState.DISENGAGED
+
+        # Mock tracking pose with current monotonic time
+        node.wrist_tracker.process_frame = lambda **kwargs: _make_wrist_pose(
+            timestamp=time.monotonic(),
+            is_valid=True,
+            tracking_state=TrackingState.TRACKING,
+            position_table=np.array([0.0, 0.0, 0.25], dtype=np.float64),
+        )
+
+        # 1. Trigger remote engage
+        node._set_pending_clutch("engage")
+        node._loop_step()
+        rclpy.spin_once(sub_node, timeout_sec=0.01)
+
+        assert node.clutch.state == ClutchState.ENGAGED
+        assert True in clutch_states_received
+
+        # 2. Trigger remote toggle -> disengage
+        node._set_pending_clutch("toggle")
+        node._loop_step()
+        rclpy.spin_once(sub_node, timeout_sec=0.01)
+
+        assert node.clutch.state == ClutchState.DISENGAGED
+        assert False in clutch_states_received
+
+        # 3. Trigger remote engage again, then home pose
+        node._set_pending_clutch("engage")
+        node._loop_step()
+        assert node.clutch.state == ClutchState.ENGAGED
+
+        node._handle_home_pose()
+        assert node.clutch.state == ClutchState.DISENGAGED
+    finally:
+        node.destroy_node()
+        sub_node.destroy_node()
+
+

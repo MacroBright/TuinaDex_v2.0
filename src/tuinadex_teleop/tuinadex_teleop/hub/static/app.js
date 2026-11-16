@@ -32,6 +32,9 @@ const phaseInput = document.getElementById('phase');
 const handHoldBtn = document.getElementById('btn-hand-hold');
 const handHoldLabelEl = document.getElementById('btn-hand-hold-label');
 const handHoldBadgeEl = document.getElementById('hand-hold-badge');
+const clutchBtn = document.getElementById('btn-clutch');
+const clutchLabelEl = document.getElementById('btn-clutch-label');
+const clutchBadgeEl = document.getElementById('clutch-badge');
 
 // 2. Web Audio 音频反馈系统 (ALOHA 风格音效)
 class AudioFeedback {
@@ -471,10 +474,10 @@ let timerInterval = null;
 
 function setControlAvailability(state) {
   const allowed = {
-    IDLE: new Set(['start', 'home', 'hand_hold', 'axis_cycle', 'imu_axes_cycle']),
-    RECORDING: new Set(['pause', 'stop', 'hand_hold', 'axis_cycle', 'imu_axes_cycle']),
-    PAUSED: new Set(['resume', 'stop', 'home', 'hand_hold', 'axis_cycle', 'imu_axes_cycle']),
-    REVIEWING: new Set(['save', 'discard', 'home', 'hand_hold', 'axis_cycle', 'imu_axes_cycle']),
+    IDLE: new Set(['start', 'home', 'hand_hold', 'clutch', 'axis_cycle', 'imu_axes_cycle']),
+    RECORDING: new Set(['pause', 'stop', 'hand_hold', 'clutch', 'axis_cycle', 'imu_axes_cycle']),
+    PAUSED: new Set(['resume', 'stop', 'home', 'hand_hold', 'clutch', 'axis_cycle', 'imu_axes_cycle']),
+    REVIEWING: new Set(['save', 'discard', 'home', 'hand_hold', 'clutch', 'axis_cycle', 'imu_axes_cycle']),
     SAVING: new Set(),
   };
   document.querySelectorAll('[data-act]').forEach((button) => {
@@ -590,6 +593,19 @@ function renderStatus(status) {
     handHoldBadgeEl.classList.toggle('is-locked', handHeld);
   }
 
+  const clutchEngaged = Boolean(status.clutch_engaged);
+  if (clutchBtn) {
+    clutchBtn.classList.toggle('is-active', clutchEngaged);
+    clutchBtn.setAttribute('aria-pressed', clutchEngaged ? 'true' : 'false');
+  }
+  if (clutchLabelEl) {
+    clutchLabelEl.textContent = clutchEngaged ? '离合已接管 · 点击暂停' : '离合接管 (跟随动作)';
+  }
+  if (clutchBadgeEl) {
+    clutchBadgeEl.textContent = clutchEngaged ? '离合接管中' : '离合暂停';
+    clutchBadgeEl.classList.toggle('is-engaged', clutchEngaged);
+  }
+
   // 遥测数据分发
   const telemetry = status.telemetry || {};
   const q = telemetry.state || [];
@@ -642,6 +658,10 @@ async function act(name) {
       audio.phaseBlip();
       const willHold = handHoldBtn ? !handHoldBtn.classList.contains('is-active') : true;
       showNotice(willHold ? '灵巧手已锁定保持当前动作 (再按 L 恢复跟随)' : '灵巧手已恢复遥操跟随');
+    } else if (name === 'clutch') {
+      audio.phaseBlip();
+      const willEngage = clutchBtn ? !clutchBtn.classList.contains('is-active') : true;
+      showNotice(willEngage ? '离合已接管 (动作实时跟随中)' : '离合已暂停 (动作安全锁定)');
     }
   } catch (error) {
     showNotice('Hub 连接已断开');
@@ -728,6 +748,13 @@ document.addEventListener('keydown', (event) => {
   if (key === 'l') {
     event.preventDefault();
     act('hand_hold');
+    return;
+  }
+
+  // 8. C 键接管/暂停离合跟随 (Clutch)
+  if (key === 'c') {
+    event.preventDefault();
+    act('clutch');
     return;
   }
 

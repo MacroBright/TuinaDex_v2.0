@@ -285,3 +285,47 @@ def test_hand_hold_action_and_ui_controls(hub):
     with urllib.request.urlopen(f"{base}/app.js", timeout=5) as response:
         js = response.read().decode()
         assert "hand_hold" in js and "key === 'l'" in js
+
+
+def test_clutch_action_and_ui_controls(hub):
+    base, controller, _ = hub
+    received = []
+    controller.on_clutch = received.append
+
+    status_code, data = _get_json(f"{base}/api/status")
+    assert status_code == 200
+    assert data["clutch_engaged"] is False
+
+    status_code, res = _post(f"{base}/api/action/clutch")
+    assert status_code == 200 and res["ok"] is True
+    controller.tick()
+    assert _get_json(f"{base}/api/status")[1]["clutch_engaged"] is True
+    assert received == [True]
+
+    status_code, res = _post(f"{base}/api/action/clutch")
+    assert status_code == 200 and res["ok"] is True
+    controller.tick()
+    assert _get_json(f"{base}/api/status")[1]["clutch_engaged"] is False
+    assert received == [True, False]
+
+    # Explicit payload
+    status_code, res = _post(f"{base}/api/action/clutch", {"enabled": True})
+    assert status_code == 200 and res["ok"] is True
+    controller.tick()
+    assert _get_json(f"{base}/api/status")[1]["clutch_engaged"] is True
+    assert received == [True, False, True]
+
+    # Home clears clutch
+    _post(f"{base}/api/action/home")
+    controller.tick()
+    assert _get_json(f"{base}/api/status")[1]["clutch_engaged"] is False
+
+    with urllib.request.urlopen(f"{base}/", timeout=5) as response:
+        html = response.read().decode()
+        assert 'data-act="clutch"' in html
+        assert 'id="btn-clutch"' in html
+        assert 'id="clutch-badge"' in html
+    with urllib.request.urlopen(f"{base}/app.js", timeout=5) as response:
+        js = response.read().decode()
+        assert "clutch" in js and "key === 'c'" in js
+

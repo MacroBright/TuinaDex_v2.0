@@ -27,6 +27,7 @@ class HubAction(str, Enum):
     LABEL = "label"
     HOME = "home"
     HAND_HOLD = "hand_hold"
+    CLUTCH = "clutch"
     AXIS_CYCLE = "axis_cycle"
     IMU_AXES_CYCLE = "imu_axes_cycle"
 
@@ -83,11 +84,13 @@ class DataHubController:
         self._last_save_error: str | None = None
         self._last_abort_reason: str | None = None
         self._hand_hold: bool = False
+        self._clutch_engaged: bool = False
         self._last_telemetry: dict = {}
 
         self.on_save: Callable[[EpisodeBuffer], None] | None = None
         self.on_home: Callable[[], None] | None = None
         self.on_hand_hold: Callable[[bool], None] | None = None
+        self.on_clutch: Callable[[bool], None] | None = None
         self.on_axis_cycle: Callable[[], None] | None = None
         self.on_imu_axes_cycle: Callable[[], None] | None = None
         self.collector.on_save = self._enqueue_save
@@ -110,6 +113,11 @@ class DataHubController:
             return {"ok": False, "error": "command queue full"}
         return {"ok": True, "accepted": parsed_action.value}
 
+    def set_clutch_state(self, engaged: bool) -> None:
+        """Update clutch engagement state from teleoperation feedback."""
+        with self._lock:
+            self._clutch_engaged = bool(engaged)
+
     def status(self) -> dict:
         """Return a coherent status snapshot from any thread."""
         with self._lock:
@@ -130,6 +138,7 @@ class DataHubController:
                 "save_errors": self._save_errors,
                 "last_save_error": self._last_save_error,
                 "hand_hold": self._hand_hold,
+                "clutch_engaged": self._clutch_engaged,
                 "telemetry": self._last_telemetry,
                 "can_record": (
                     self.channel.is_ready()
@@ -198,6 +207,7 @@ class DataHubController:
             self._finish_episode(save=False)
         elif action is HubAction.HOME:
             self._hand_hold = False
+            self._clutch_engaged = False
             if self.on_home is not None:
                 try:
                     self.on_home()
@@ -213,6 +223,16 @@ class DataHubController:
                     self.on_hand_hold(self._hand_hold)
                 except Exception:
                     logger.exception("on_hand_hold callback failed")
+        elif action is HubAction.CLUTCH:
+            if "enabled" in payload:
+                self._clutch_engaged = bool(payload["enabled"])
+            else:
+                self._clutch_engaged = not self._clutch_engaged
+            if self.on_clutch is not None:
+                try:
+                    self.on_clutch(self._clutch_engaged)
+                except Exception:
+                    logger.exception("on_clutch callback failed")
         elif action is HubAction.AXIS_CYCLE:
             if self.on_axis_cycle is not None:
                 try:

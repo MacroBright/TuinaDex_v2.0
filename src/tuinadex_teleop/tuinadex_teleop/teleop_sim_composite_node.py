@@ -348,6 +348,13 @@ class TeleopSimCompositeNode(Node):
         self.hand_hold_sub = self.create_subscription(
             Bool, "/teleop/hand_hold", lambda msg: self._set_hand_hold(bool(msg.data), source="ROS2"), 10
         )
+        self.clutch_sub = self.create_subscription(
+            Bool, "/teleop/clutch", lambda msg: self._set_pending_clutch("engage" if msg.data else "disengage"), 10
+        )
+        self.clutch_toggle_sub = self.create_subscription(
+            Empty, "/teleop/clutch_toggle", lambda _: self._set_pending_clutch("toggle"), 10
+        )
+        self.clutch_state_pub = self.create_publisher(Bool, "/teleop/clutch_state", 10)
 
         if self.use_sim:
             self.arm_state_pub = self.create_publisher(JointState, "/arm/joint_states", 10)
@@ -378,13 +385,14 @@ class TeleopSimCompositeNode(Node):
         self.frame_count = 0
         self._last_stream_seq = -1
         self._last_wrist_pose = None
+        self._pending_clutch_cmd: str | None = None
 
         # Direct UDP Broadcast socket for cross-environment IPC
         import socket
         self._udp_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self._udp_dest = ("127.0.0.1", 9876)
 
-        # Listen for UDP HOME / HAND_HOLD triggers from Web Hub
+        # Listen for UDP HOME / HAND_HOLD / CLUTCH triggers from Web Hub
         self._udp_home_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         try:
             self._udp_home_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -402,6 +410,12 @@ class TeleopSimCompositeNode(Node):
                             self._set_hand_hold(True, source="HUB_UDP")
                         elif data == b"HAND_HOLD:0":
                             self._set_hand_hold(False, source="HUB_UDP")
+                        elif data in (b"CLUTCH", b"CLUTCH:TOGGLE"):
+                            self._set_pending_clutch("toggle")
+                        elif data == b"CLUTCH:1":
+                            self._set_pending_clutch("engage")
+                        elif data == b"CLUTCH:0":
+                            self._set_pending_clutch("disengage")
                         elif data == b"AXIS_CYCLE":
                             self._handle_axis_cycle()
                         elif data == b"IMU_AXES_CYCLE":
@@ -463,6 +477,17 @@ class TeleopSimCompositeNode(Node):
             hand_cmd.target_q = hand_hold_q.copy()
             hand_cmd.is_clutched = True
             self.hand_retargeter.sync_held_state(hand_hold_q, timestamp=t_now)
+
+        # Check pending clutch toggle/engage/disengage from UDP or ROS 2
+        if self._pending_clutch_cmd is not None:
+            cmd = self._pending_clutch_cmd
+            self._pending_clutch_cmd = None
+            if cmd == "toggle":
+                self._trigger_clutch_toggle(wrist_pose, hand_cmd, imu_reading)
+            elif cmd == "engage":
+                self._trigger_clutch_engage(wrist_pose, hand_cmd, imu_reading)
+            elif cmd == "disengage":
+                self._trigger_clutch_disengage()
 
         # Actual robot end-effector Cartesian pose
         cur_arm_p, cur_arm_R = self.arm_ik.forward_kinematics(self.latest_obs.arm_actual_q)
@@ -822,30 +847,7 @@ class TeleopSimCompositeNode(Node):
                     self.get_logger().info("收到退出键 (Q/ESC)，启动两阶段分步安全归零退出流程 (J4-J6 优先回正 -> J1-J3 随后归零)...")
                     self._start_safe_exit_to_zero()
             elif key in (32, ord("c"), ord("C")):
-                if self.clutch.state == ClutchState.ENGAGED:
-                    self.clutch.disengage()
-                    if self._hand_hold_enabled and self._hand_hold_q is not None:
-                        self._latched_hand_q = self._hand_hold_q.copy()
-                        self._notify_hotkey("离合暂停 [DISENGAGED]: 机械臂锁定 (灵巧手继续保持)")
-                    else:
-                        self._latched_hand_q = self._last_published_hand_q.copy()
-                        self._notify_hotkey("离合暂停 [DISENGAGED]: 动作安全锁定")
-                else:
-                    tot_f = self.contact_forces.get("total", 0.0)
-                    if tot_f > 40.0:
-                        self.get_logger().warning(f"无法接管: 接触力({tot_f:.1f}N)过大，请先脱离接触！")
-                        self._notify_hotkey("无法接管: 接触力过大")
-                    elif wrist_pose.tracking_state != TrackingState.TRACKING or wrist_pose.position_table is None:
-                        self.get_logger().warning("无法接管: 未检测到人手位置，请将手放入相机视野内！")
-                        self._notify_hotkey("无法接管: 未检测到人手")
-                    else:
-                        self._engage_clutch(
-                            wrist_pose=wrist_pose,
-                            hand_cmd=hand_cmd,
-                            imu_reading=imu_reading,
-                            zero_imu_always=True,
-                        )
-                        self._notify_hotkey("离合接管 [ENGAGED]: 动作实时跟随")
+                self._trigger_clutch_toggle(wrist_pose, hand_cmd, imu_reading)
             elif key in (ord("s"), ord("S")):
                 self.safety_supervisor.toggle_enabled()
             elif key in (ord("a"), ord("A")):
@@ -993,6 +995,60 @@ class TeleopSimCompositeNode(Node):
                 return actual_q.copy()
         return cmd_q.copy()
 
+    def _set_pending_clutch(self, cmd: str) -> None:
+        self._pending_clutch_cmd = str(cmd)
+
+    def _broadcast_clutch_state(self, is_engaged: bool) -> None:
+        if hasattr(self, "clutch_state_pub") and self.clutch_state_pub is not None:
+            try:
+                self.clutch_state_pub.publish(Bool(data=bool(is_engaged)))
+            except Exception:
+                pass
+        try:
+            sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            sock.sendto(b"CLUTCH_STATE:1" if is_engaged else b"CLUTCH_STATE:0", ("127.0.0.1", 9878))
+            sock.close()
+        except Exception:
+            pass
+
+    def _trigger_clutch_disengage(self) -> None:
+        if self.clutch.state == ClutchState.ENGAGED:
+            self.clutch.disengage()
+            if self._hand_hold_enabled and self._hand_hold_q is not None:
+                self._latched_hand_q = self._hand_hold_q.copy()
+                self._notify_hotkey("离合暂停 [DISENGAGED]: 机械臂锁定 (灵巧手继续保持)")
+            else:
+                self._latched_hand_q = self._last_published_hand_q.copy()
+                self._notify_hotkey("离合暂停 [DISENGAGED]: 动作安全锁定")
+            self._broadcast_clutch_state(False)
+
+    def _trigger_clutch_engage(self, wrist_pose, hand_cmd, imu_reading) -> bool:
+        tot_f = self.contact_forces.get("total", 0.0)
+        if tot_f > 40.0:
+            self.get_logger().warning(f"无法接管: 接触力({tot_f:.1f}N)过大，请先脱离接触！")
+            self._notify_hotkey("无法接管: 接触力过大")
+            return False
+        elif wrist_pose is None or wrist_pose.tracking_state != TrackingState.TRACKING or wrist_pose.position_table is None:
+            self.get_logger().warning("无法接管: 未检测到人手位置，请将手放入相机视野内！")
+            self._notify_hotkey("无法接管: 未检测到人手")
+            return False
+        else:
+            self._engage_clutch(
+                wrist_pose=wrist_pose,
+                hand_cmd=hand_cmd,
+                imu_reading=imu_reading,
+                zero_imu_always=True,
+            )
+            self._notify_hotkey("离合接管 [ENGAGED]: 动作实时跟随")
+            self._broadcast_clutch_state(True)
+            return True
+
+    def _trigger_clutch_toggle(self, wrist_pose, hand_cmd, imu_reading) -> None:
+        if self.clutch.state == ClutchState.ENGAGED:
+            self._trigger_clutch_disengage()
+        else:
+            self._trigger_clutch_engage(wrist_pose, hand_cmd, imu_reading)
+
     def _engage_clutch(
         self,
         wrist_pose: WristPose,
@@ -1033,6 +1089,7 @@ class TeleopSimCompositeNode(Node):
             self._hand_hold_enabled = False
             self._hand_hold_q = None
         self.clutch.disengage()
+        self._broadcast_clutch_state(False)
 
         # 每次按 [R]/[H] 键或收到回位信号时，动态同步重载最新的 teleop_real_posture.yaml 准备姿态配置 (arm.ready_pose_deg)
         self._load_teleop_posture_config()

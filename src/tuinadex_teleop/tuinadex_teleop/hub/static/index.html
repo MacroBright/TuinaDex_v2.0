@@ -128,6 +128,9 @@
           <button type="button" class="btn-action btn-discard" data-act="discard" title="舍弃当前试次 (D)">
             <span class="btn-icon-symbol">✕</span> 丢弃 <kbd>D</kbd>
           </button>
+          <button type="button" class="btn-action btn-clutch" id="btn-clutch" data-act="clutch" title="离合接管 / 暂停动作跟随 (C)">
+            <span class="btn-icon-symbol">⚡</span> <span id="btn-clutch-label">离合接管 (跟随动作)</span> <kbd>C</kbd>
+          </button>
           <button type="button" class="btn-action btn-home" data-act="home" title="一键回到初始姿态 (R / H)">
             <span class="btn-icon-symbol">⟲</span> 回初始姿态 <kbd>R/H</kbd>
           </button>
@@ -173,7 +176,7 @@
         <div class="anatomical-container">
           <!-- 机械臂 6-DOF -->
           <div class="joint-group-card">
-            <h3>reBot 机械臂 (6-DOF)</h3>
+            <h3>reBot 机械臂 (6-DOF) <span id="clutch-badge" class="clutch-mode-pill">离合暂停</span></h3>
             <div class="joint-bars" id="arm-joints"></div>
           </div>
           <!-- 灵巧手 16-DOF -->

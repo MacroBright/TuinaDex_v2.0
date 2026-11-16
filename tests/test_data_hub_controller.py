@@ -192,3 +192,38 @@ def test_data_hub_controller_environment_tag():
     finally:
         ctrl_real.shutdown()
 
+
+def test_submit_clutch_toggle_and_home_reset():
+    channel, collector, ctrl = _make()
+    states = []
+    ctrl.on_clutch = lambda enabled: states.append(enabled)
+    try:
+        assert ctrl.status()["clutch_engaged"] is False
+
+        assert ctrl.submit("clutch")["ok"] is True
+        ctrl.tick()
+        assert ctrl.status()["clutch_engaged"] is True
+        assert states == [True]
+
+        assert ctrl.submit("clutch")["ok"] is True
+        ctrl.tick()
+        assert ctrl.status()["clutch_engaged"] is False
+        assert states == [True, False]
+
+        # Explicit payload enable -> HOME must clear clutch
+        assert ctrl.submit("clutch", {"enabled": True})["ok"] is True
+        ctrl.tick()
+        assert ctrl.status()["clutch_engaged"] is True
+        assert ctrl.submit("home")["ok"] is True
+        ctrl.tick()
+        assert ctrl.status()["clutch_engaged"] is False
+
+        # set_clutch_state sync from teleop node
+        ctrl.set_clutch_state(True)
+        assert ctrl.status()["clutch_engaged"] is True
+        ctrl.set_clutch_state(False)
+        assert ctrl.status()["clutch_engaged"] is False
+    finally:
+        ctrl.shutdown()
+
+

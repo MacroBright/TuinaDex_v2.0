@@ -107,6 +107,8 @@ class TeleopBridgeNode(Node):
         self.create_subscription(JointState, "/hand/joint_states", self._hand_state_cb, 10)
         self.home_pub = self.create_publisher(Empty, "/teleop/home", 10)
         self.hand_hold_pub = self.create_publisher(Bool, "/teleop/hand_hold", 10)
+        self.clutch_pub = self.create_publisher(Bool, "/teleop/clutch", 10)
+        self.clutch_toggle_pub = self.create_publisher(Empty, "/teleop/clutch_toggle", 10)
 
         # UDP Home Receiver loop
         self.home_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -184,6 +186,15 @@ class TeleopBridgeNode(Node):
                 elif data == b"HAND_HOLD:0":
                     self.hand_hold_pub.publish(Bool(data=False))
                     self.get_logger().info("Forwarded UDP HAND_HOLD:0 -> /teleop/hand_hold")
+                elif data == b"CLUTCH:1":
+                    self.clutch_pub.publish(Bool(data=True))
+                    self.get_logger().info("Forwarded UDP CLUTCH:1 -> /teleop/clutch")
+                elif data == b"CLUTCH:0":
+                    self.clutch_pub.publish(Bool(data=False))
+                    self.get_logger().info("Forwarded UDP CLUTCH:0 -> /teleop/clutch")
+                elif data in (b"CLUTCH", b"CLUTCH:TOGGLE"):
+                    self.clutch_toggle_pub.publish(Empty())
+                    self.get_logger().info("Forwarded UDP CLUTCH -> /teleop/clutch_toggle")
             except socket.timeout:
                 continue
             except Exception:

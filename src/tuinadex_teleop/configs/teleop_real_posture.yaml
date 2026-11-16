@@ -58,6 +58,6 @@ teleop:
   # 遥操与离合交互
   clutch_scale: 1.0             # 人手位移与机械臂末端移动缩放比例 (1.0 为 1:1)
   axis_mapping: "-y,-x,+z"      # 人手视觉坐标系到推拿床工作区坐标系的默认对齐映射 (旋转90度正向跟随)
-  IMUaxis: "-y,+x,+z"           # 手腕 IMU 默认姿态对齐映射 (IMUaxis: 默认 +x,+y,+z)
+  IMUaxis: "-x,+y,+z"           # 手腕 IMU 默认姿态对齐映射 (IMUaxis: 默认 +x,+y,+z)
   auto_engage: false            # 启动时是否自动挂离合 (默认 false: 安全断开挂起，需按空格激活)
 
