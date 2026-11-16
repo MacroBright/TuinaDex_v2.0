@@ -141,3 +141,128 @@ def test_multi_modal_v3_export_with_three_cameras(tmp_path):
     assert frame["observation.effort"].shape == (22,)
     assert frame["observation.contact_forces"].shape == (4,)
     assert "observation.images.side" in frame
+
+
+def test_dynamic_camera_detection_two_cameras_with_missing_wrist(tmp_path):
+    """When config has 3 cameras but buffer only has 2 (missing wrist), writer must auto-detect and save 2 cameras."""
+    from tuinadex_teleop.envs.config import RobotConfig
+    from tuinadex_teleop.collection.episode_buffer import EpisodeBuffer
+    from tuinadex_dataset.lerobot_exporter import LeRobotDatasetWriter
+    from lerobot.datasets.lerobot_dataset import LeRobotDataset
+
+    cfg = RobotConfig(
+        mode="arm_hand", camera_names=["overhead", "wrist", "side"]
+    )
+    ds_root = tmp_path / "ds_2cam"
+    writer = LeRobotDatasetWriter(
+        repo_id=str(ds_root), config=cfg, fps=50.0
+    )
+
+    buffer = EpisodeBuffer(episode_index=0, language_instruction="双相机推拿采集")
+    for i in range(10):
+        img_overhead = np.full((96, 128, 3), 50 + i, dtype=np.uint8)
+        img_side = np.full((96, 128, 3), 100 + i, dtype=np.uint8)
+        buffer.add_frame(
+            state=np.full(22, i * 0.01, np.float32),
+            action=np.full(22, i * 0.02, np.float32),
+            effort=np.full(22, i * 0.1, np.float32),
+            contact_forces=np.array([1.0, 2.0, 3.0, 4.0], np.float32),
+            images={
+                "overhead": img_overhead,
+                "side": img_side,
+                # 'wrist' is intentionally missing
+            },
+            timestamp=i * 0.02,
+            phase_label="press",
+        )
+    buffer.seal_episode()
+
+    saved_path = writer.save_episode(buffer, task="tuina_massage")
+    assert Path(saved_path).resolve() == ds_root.resolve()
+
+    info = json.loads((ds_root / "meta" / "info.json").read_text())
+    features = info["features"]
+
+    # Active cameras must be present
+    assert "observation.images.overhead" in features
+    assert "observation.images.side" in features
+    # Absent wrist camera must NOT be present in features
+    assert "observation.images.wrist" not in features
+
+    # Verify videos exist for overhead and side, but not wrist
+    assert list((ds_root / "videos/observation.images.overhead").rglob("*.mp4"))
+    assert list((ds_root / "videos/observation.images.side").rglob("*.mp4"))
+    assert not (ds_root / "videos/observation.images.wrist").exists()
+
+    # Load with LeRobot native reader
+    dataset = LeRobotDataset("ds_2cam", root=ds_root)
+    assert len(dataset) == 10
+    frame0 = dataset[0]
+    assert "observation.images.overhead" in frame0
+    assert "observation.images.side" in frame0
+    assert "observation.images.wrist" not in frame0
+
+
+def test_schema_mismatch_auto_routing_protects_existing_dataset(tmp_path):
+    """When target dataset has 3 cameras and 1 episode, saving a 2-camera episode must auto-route to _2cam."""
+    from tuinadex_teleop.envs.config import RobotConfig
+    from tuinadex_teleop.collection.episode_buffer import EpisodeBuffer
+    from tuinadex_dataset.lerobot_exporter import LeRobotDatasetWriter
+    from lerobot.datasets.lerobot_dataset import LeRobotDataset
+
+    cfg3 = RobotConfig(
+        mode="arm_hand", camera_names=["overhead", "wrist", "side"]
+    )
+    orig_root = tmp_path / "my_demo"
+
+    # 1. Create original 3-camera dataset with 1 episode
+    writer3 = LeRobotDatasetWriter(repo_id=str(orig_root), config=cfg3, fps=50.0)
+    buf3 = EpisodeBuffer(episode_index=0)
+    for i in range(5):
+        img = np.full((96, 128, 3), 80, dtype=np.uint8)
+        buf3.add_frame(
+            state=np.full(22, 0.1, np.float32),
+            action=np.full(22, 0.1, np.float32),
+            effort=np.full(22, 0.1, np.float32),
+            contact_forces=np.array([1.0, 1.0, 1.0, 1.0], np.float32),
+            images={"overhead": img, "wrist": img, "side": img},
+            timestamp=i * 0.02,
+        )
+    buf3.seal_episode()
+    writer3.save_episode(buf3)
+
+    info3 = json.loads((orig_root / "meta" / "info.json").read_text())
+    assert info3["total_episodes"] == 1
+    assert "observation.images.wrist" in info3["features"]
+
+    # 2. Now attempt to write a 2-camera episode targeting the SAME repo_id
+    writer2 = LeRobotDatasetWriter(repo_id=str(orig_root), config=cfg3, fps=50.0)
+    buf2 = EpisodeBuffer(episode_index=0)
+    for i in range(5):
+        img = np.full((96, 128, 3), 90, dtype=np.uint8)
+        buf2.add_frame(
+            state=np.full(22, 0.2, np.float32),
+            action=np.full(22, 0.2, np.float32),
+            effort=np.full(22, 0.2, np.float32),
+            contact_forces=np.array([1.0, 1.0, 1.0, 1.0], np.float32),
+            images={"overhead": img, "side": img},  # no wrist
+            timestamp=i * 0.02,
+        )
+    buf2.seal_episode()
+
+    # Must NOT crash with Feature mismatch; must auto-route to my_demo_2cam
+    saved_path = Path(writer2.save_episode(buf2))
+    assert saved_path == tmp_path / "my_demo_2cam"
+
+    # Original 3-camera dataset is intact!
+    orig_ds = LeRobotDataset("my_demo", root=orig_root)
+    assert len(orig_ds) == 5
+    assert "observation.images.wrist" in orig_ds[0]
+
+    # New 2-camera dataset is created and healthy!
+    routed_ds = LeRobotDataset("my_demo_2cam", root=saved_path)
+    assert len(routed_ds) == 5
+    assert "observation.images.wrist" not in routed_ds[0]
+    assert "observation.images.overhead" in routed_ds[0]
+    assert "observation.images.side" in routed_ds[0]
+

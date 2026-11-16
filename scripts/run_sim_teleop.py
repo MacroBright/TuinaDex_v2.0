@@ -229,8 +229,8 @@ def draw_simulation_hud(
     panel_w = 640
     panel = np.zeros((cam_h, panel_w, 3), dtype=np.uint8)
 
-    # 1. Header
-    cv2.putText(panel, "TuinaDex Digital Twin Teleop (MuJoCo)", (20, 30),
+    # 1. Header (仿真数字孪生)
+    cv2.putText(panel, "TuinaDex Teleop [仿真 (MuJoCo)]", (20, 30),
                 cv2.FONT_HERSHEY_SIMPLEX, 0.60, (255, 255, 255), 2, cv2.LINE_AA)
 
     # 2. Clutch & Status Badges
@@ -932,7 +932,7 @@ def main():
                     imu_tracker=wrist_imu_tracker,
                     safety_report=safety_report,
                 )
-                cv2.imshow("TuinaDex 22-DOF Digital Twin Teleoperation", dashboard)
+                cv2.imshow("TuinaDex 22-DOF Teleoperation HUD [仿真 (MuJoCo)]", dashboard)
 
                 key = cv2.waitKey(1) & 0xFF
                 if key in (27, ord("q"), ord("Q")):

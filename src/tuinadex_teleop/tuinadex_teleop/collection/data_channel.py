@@ -64,6 +64,21 @@ class BaseDataChannel(ABC):
         """Release channel-owned resources."""
         return None
 
+    def is_ready(self) -> bool:
+        """Return True if all camera sources and sensors are ready to record."""
+        return True
+
+    def get_bindings(self) -> dict[str, str]:
+        """Return mapping of camera name -> bound physical device node."""
+        return getattr(self, "_bindings", {})
+
+    def bind_camera(self, cam_name: str, device: str) -> bool:
+        """Dynamically rebind a camera to a physical device."""
+        if not hasattr(self, "_bindings"):
+            self._bindings = {}
+        self._bindings[cam_name] = device
+        return True
+
 
 class SimDataChannel(BaseDataChannel):
     """Camera packets from a producer thread and state from MuJoCo."""
@@ -141,6 +156,7 @@ class RealDataChannel(BaseDataChannel):
         *,
         camera_producer=None,
         state_supplier: Callable[[], dict[str, np.ndarray]] | None = None,
+        config_path=None,
     ):
         if env is None and (camera_producer is None or state_supplier is None):
             raise ValueError(
@@ -152,6 +168,7 @@ class RealDataChannel(BaseDataChannel):
         self._state_supplier = state_supplier
         self._jpeg_quality = int(jpeg_quality)
         self.camera_names = tuple(camera_names)
+        self.config_path = config_path
         self._cache: dict[str, tuple[np.ndarray, bytes]] = {}
         self._stamps: dict[str, float] = {}
 
@@ -213,6 +230,27 @@ class RealDataChannel(BaseDataChannel):
     def close(self) -> None:
         self._cache.clear()
         self._stamps.clear()
+
+    def is_ready(self) -> bool:
+        if self._camera_producer is not None and hasattr(
+            self._camera_producer, "is_all_bound"
+        ):
+            return self._camera_producer.is_all_bound()
+        return True
+
+    def bind_camera(self, cam_name: str, device: str) -> bool:
+        if self._camera_producer is not None and hasattr(
+            self._camera_producer, "bind_camera"
+        ):
+            return self._camera_producer.bind_camera(cam_name, device)
+        return False
+
+    def get_bindings(self) -> dict[str, str]:
+        if self._camera_producer is not None and hasattr(
+            self._camera_producer, "get_bindings"
+        ):
+            return self._camera_producer.get_bindings()
+        return {}
 
 
 class MockDataChannel(BaseDataChannel):

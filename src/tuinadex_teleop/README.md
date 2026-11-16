@@ -31,10 +31,14 @@ cd /home/bright/win_office/ubantu_files/project/TuinaDex_v2.0
 
 ```bash
 # 启动桌面物理平面 + 手腕 IMU 姿态零位 + 灵巧手活动度 (ROM) 交互式标定
-./bin/tuina teleop calibrate
+./bin/tuina calibrate all
 
-# 或仅对手腕 6 轴 IMU 进行 3 姿态正交对齐标定 (中立平放 -> 俯仰上翘 -> 向右翻滚)
-./bin/tuina teleop calibrate --imu-only --imu-port /dev/ttyUSB0
+# 或仅对手腕 6 轴 IMU 进行 3 姿态正交对齐标定 (中立平放 -> 俯仰上翘 -> 向右翻滚，默认端口 /dev/myimu)
+./bin/tuina calibrate imu --port /dev/myimu
+
+# 真机推拿准备姿态无动力拖动示教 (写入 configs/teleop_real_posture.yaml) 与平滑验证
+./bin/tuina arm teach --channel can0
+./bin/tuina arm goto-ready --channel can0
 ```
 
 ### 3. 方式 C：ROS 2 复合节点启动 (60Hz 高频通信)
@@ -59,31 +63,40 @@ ros2 launch tuinadex_teleop teleop_sim.launch.py use_sim:=true mock:=true mock_i
 # 终端 1：启动 60Hz 视-惯遥操作节点 (弹出 OpenCV 交互仪表盘，下发 22D 动作目标)
 ./bin/tuina teleop node --rate-hz 60.0
 
-# 终端 2：启动 Web UI 采集工作台 (自动监听遥操指令 + 3机位 50Hz 实时视频流与遥测)
+# 终端 2：启动 Web UI 采集工作台 (仿真使用 EGL 三相机；真机加 --env real 自动加载 configs/real_cameras.yaml)
 ./bin/tuina collect hub --env sim --mode arm_hand --cameras overhead,wrist,side --fps 50
 ```
 - 打开浏览器访问 👉 **`http://127.0.0.1:8080`**；
-- 监视 3 机位视频墙（俯视 60°、腕部 75°、侧向 45°）与 22 维实时关节/接触力曲线；
-- 点击页面中 **【开始录制 (Start)】** 开始采集；示教完成后点击 **【停止录制 (Stop)】** $\rightarrow$ **【保存试次 (Save Episode)】**；
+- 监视 3 机位视频墙（`overhead`、`wrist`、`side`）与 22 维实时关节/接触力曲线；
+- 快捷键 **`[Space]`** 开始/停止录制、**`[S]`** 保存试次、**`[D]`** 丢弃、**`[L]`** 切换灵巧手姿态保持、**`[H]`** 一键回准备姿态；
 - 系统自动多路流式编码生成包含 H.264 MP4 视频与 Parquet 表格的标准 `LeRobotDataset v3.0`。
 
-### 5. 方式 E：真机 22D 臂手协同遥操 (`teleop real`)
-连接真实机械臂（SocketCAN `can0`）与灵巧手（串口 `/dev/ttyUSB0`，若未接手会自动启用 `mock_hand` 接管）以及 RealSense 相机：
+### 5. 方式 E：真机遥操验收闭环 (`teleop composite` / `teleop hand`)
+
+#### E.1 16-DOF LEAP Hand 真机视觉遥操
+```bash
+# 途径 1: 超低延迟串口直驱 (默认 RealSense RGB camera_id=4)
+./bin/tuina teleop hand --port /dev/ttyUSB0 --camera-id 4
+
+# 途径 2: ROS 2 节点化启动 (teleop_hand_real.launch.py，发布 /hand/joint_command)
+./bin/tuina teleop hand --backend ros2 --port /dev/ttyUSB0 --camera-id 4
+```
+
+#### E.2 22-DOF 臂手协同真机遥操 (`teleop composite` / `teleop real`)
+连接真实机械臂（SocketCAN `can0`）与灵巧手（串口 `/dev/ttyUSB0`，未接手时在 `teleop_composite_real.launch.py` 下会自动回退 `mock_hand:=true`）以及 RealSense 相机：
 
 ```bash
-# 步骤 1: 激活 Linux SocketCAN 接口 (1 Mbps，波特率必须为 1000000)
-sudo ip link set can0 down 2>/dev/null || true
-sudo ip link set can0 up type can bitrate 1000000
-ip -details link show can0   # 确认输出状态为 state UP，bitrate 1000000
+# 步骤 1: 激活 1 Mbps SocketCAN 接口 (内部自动调用 sudo ip link set can0 up type can bitrate 1000000)
+./bin/tuina arm can up --channel can0 --bitrate 1000000
 
-# 步骤 2: 直接拉起真机遥操系统 (若无手腕 IMU 传入 --no-imu)
-source scripts/activate_tuinadex.sh control
-./bin/tuina teleop real --no-imu
+# 步骤 2: 拉起 22-DOF 真机视-惯协同遥操 (自带硬件前置自检与急停确认；无手腕 IMU 时加 --no-imu)
+./bin/tuina teleop composite --arm-channel can0 --hand-port /dev/ttyUSB0 --no-imu
+# 兼容别名: ./bin/tuina teleop real --no-imu
 
 # 步骤 3: 界面就绪后在 OpenCV HUD 窗口按键操作：
-#   - 按 [R] 键：机械臂自动以五次多项式 3.0 秒平滑展开就位到推拿准备姿态；
-#   - 人手移入镜头视场，按 [空格键] (Space) 挂上离合开始 XYZ 三向平移示教；
-#   - 随时按 [空格键] 脱开离合（机械臂原位安全定格悬停），按 [Q] 退出。
+#   - 按 [R] 或 [H] 键：加载 configs/teleop_real_posture.yaml，机械臂以 3.0s 五次多项式平滑展开至 ready_pose；
+#   - 人手移入镜头视场，按 [空格键] / [C] 挂上离合开始协同跟随；可随时按 [L] 锁定/解锁灵巧手手势；
+#   - 按 [Q] / [ESC] 执行两阶段分步安全归零退出 (J4-J6 手腕与手指先展开归零 -> J1-J3 臂主体折叠归零 -> 自动关停节点)。
 ```
 
 ---
@@ -103,8 +116,9 @@ source scripts/activate_tuinadex.sh control
 | **`[A]`** | **位移映射轴向切换** | 实时轮换位置正交对齐（默认 `-y,+x,+z` 适配 90° 床侧基座旋转安装）。 |
 | **`[X]`** | **手腕 IMU 姿态轴向切换** | 实时轮换手腕 IMU 姿态轴向（大写 `[X]` 为反向轮换，严格保证 $\det=+1$）。 |
 | **`[1]`/`[2]`/`[3]`** | **灵巧手解算模式切换** | 1: Hybrid 混合优化模式 (默认)；2: 纯几何映射模式；3: DexPilot 模式。 |
-| **`[R]`** | **平滑就位 / 准备姿态复位** | **真机与仿真通用**：以五次多项式（Smoothstep Quintic 3.0秒匀速柔顺过渡）驱动机械臂平滑到达推拿准备姿态 (`ready_pose_deg`)。 |
-| **`[Q]`** / **`[ESC]`** | **安全退出** | 安全释放相机与 IMU 串口资源并关闭所有窗口。 |
+| **`[L]`** | **灵巧手手势保持切换 (HoldHand)** | 锁定或恢复 16-DOF 灵巧手跟随（HUD 状态与 Web Hub `[L]` / `/teleop/hand_hold` 双向同步），方便保持手型专心平移机械臂。 |
+| **`[R]`** / **`[H]`** | **平滑就位 / 准备姿态复位** | **真机与仿真通用**：加载 `teleop_real_posture.yaml`，以 3.0s 五次多项式平滑驱动机械臂到达推拿准备姿态 (`ready_pose_deg`)。 |
+| **`[Q]`** / **`[ESC]`** | **两阶段分步安全归零退出** | 阶段 1 手腕 (`J4-J6`) 与灵巧手优先回正展平 $\rightarrow$ 阶段 2 臂主体 (`J1-J3`) 折叠归零 $\rightarrow$ 安全释放硬件并触发 launch 关机。 |
 
 ---
 
@@ -161,9 +175,10 @@ source scripts/activate_tuinadex.sh control
 #### 订阅话题 (Subscribed Topics)
 | 话题名 | 消息类型 | 频率 (Hz) | 语义说明 |
 | :--- | :--- | :--- | :--- |
-| `/arm/joint_states` | `sensor_msgs/msg/JointState` | 50 Hz | 机械臂实测物理位置反馈 (供 IK 求解参考) |
+| `/arm/joint_states` | `sensor_msgs/msg/JointState` | 50 Hz | 机械臂实测物理位置反馈 (供 IK 求解与离合器零冲击锚定参考) |
 | `/hand/joint_states` | `sensor_msgs/msg/JointState` | 50 Hz | 灵巧手实测物理状态反馈 |
-| `/teleop/home` | `std_msgs/msg/Empty` | 事件驱动 | 远程触发机械臂安全回零 |
+| `/teleop/home` | `std_msgs/msg/Empty` | 事件驱动 | 远程触发机械臂与灵巧手平滑复位至准备姿态 (`ready_pose_deg`) |
+| `/teleop/hand_hold` | `std_msgs/msg/Bool` | 事件驱动 | 远程切换灵巧手保持锁定/恢复跟随状态 (与 Web Hub 联动) |
 
 ---
 
@@ -173,29 +188,34 @@ source scripts/activate_tuinadex.sh control
 src/tuinadex_teleop/
 ├── configs/
 │   ├── mjcf/
-│   │   ├── tuina_sim_scene.xml      # 22-DOF 一体化推拿全场景动力学模型
-│   │   └── rebot_arm_leap_hand.xml  # 22-DOF 臂手一体纯机器人模型
+│   │   ├── tuina_sim_scene.xml        # 22-DOF 一体化推拿全场景动力学模型
+│   │   └── rebot_arm_leap_hand.xml    # 22-DOF 臂手一体纯机器人模型
 │   ├── urdf/
-│   │   ├── rebot_arm_rs.urdf        # 6-DOF 机械臂运动学模型 (供 Pink IK 求解)
-│   │   └── leap_hand_right.urdf     # 16-DOF 灵巧手运动学模型
-│   ├── session_calibration.yaml     # 桌面、IMU 与灵巧手全集成统一标定配置文件
-│   ├── table_calibration.yaml       # 桌面物理平面 ArUco 标定参数
-│   ├── imu_calibration.yaml         # 腕部 IMU 姿态对齐标定参数
-│   ├── teleop_config.yaml           # 遥操作全局安全阈值与时钟配置
-│   └── leap_retargeting_config.yaml # 灵巧手关节优化权重与几何缩放配置
+│   │   ├── rebot_arm_rs.urdf          # 6-DOF 机械臂运动学模型 (供 Pink IK 求解)
+│   │   └── leap_hand_right.urdf       # 16-DOF 灵巧手运动学模型
+│   ├── teleop_real_posture.yaml       # 真机臂手准备姿态 (ready_pose_deg) 与平顺限速配置
+│   ├── real_cameras.yaml              # 真机多 UVC 相机确定性 /dev/v4l/by-path 端口映射配置
+│   ├── session_calibration.yaml       # 桌面、IMU 与灵巧手全集成统一标定配置文件
+│   ├── table_calibration.yaml         # 桌面物理平面 ArUco 标定参数
+│   ├── imu_calibration.yaml           # 腕部 IMU 姿态对齐标定参数
+│   ├── teleop_config.yaml             # 遥操作全局安全阈值与时钟配置
+│   └── leap_retargeting_config.yaml   # 灵巧手关节优化权重与几何缩放配置
 ├── launch/
-│   ├── teleop_sim.launch.py         # 22 维复合仿真遥操 ROS 2 启动入口 (支持 60Hz)
-│   └── teleop.launch.py             # 纯手势遥操启动入口
+│   ├── teleop_composite_real.launch.py # 22-DOF 臂手真机协同遥操启动入口 (arm + hand + composite)
+│   ├── teleop_hand_real.launch.py     # 16-DOF 灵巧手真机视觉遥操启动入口
+│   ├── teleop_sim.launch.py           # 22 维复合仿真遥操 ROS 2 启动入口 (支持 60Hz)
+│   └── teleop.launch.py               # 纯手势遥操启动入口
 ├── tuinadex_teleop/
-│   ├── adapters/                    # MujocoSimAdapter, MockSimAdapter
-│   ├── core/                        # clutch.py, safety.py, types.py, names.py
-│   ├── kinematics/                  # arm_ik_solver.py (Pink QP), hand_retargeter.py
-│   ├── perception/                  # wrist_tracker.py, imu_stream.py, realsense_stream.py
-│   ├── ui/                          # teleop_hud.py (高密度 OpenCV 实时仪表盘)
-│   ├── hub/                         # Web UI 数据采集工作台前端与 SSE 推送
-│   ├── collection/                  # data_hub_controller.py (多模态采集与视频转码)
-│   ├── teleop_sim_composite_node.py # 22-DOF 复合仿真遥操 ROS 2 主节点
-│   └── teleop_gesture_node.py       # 纯手部视觉遥操节点
+│   ├── adapters/                      # MujocoSimAdapter, MockSimAdapter
+│   ├── cameras/                       # camera_specs.py, sim_camera_rig.py, real_camera_rig.py (真机多 UVC 线程采集)
+│   ├── core/                          # clutch.py, safety.py, types.py, names.py
+│   ├── kinematics/                    # arm_ik_solver.py (Pink QP), hand_retargeter.py
+│   ├── perception/                    # wrist_tracker.py, imu_stream.py, realsense_stream.py
+│   ├── ui/                            # teleop_hud.py (高密度 OpenCV 实时仪表盘)
+│   ├── hub/                           # Web UI 数据采集工作台前端与 SSE 推送
+│   ├── collection/                    # data_channel.py (Sim/Real), data_hub_controller.py
+│   ├── teleop_sim_composite_node.py   # 22-DOF 复合真机/仿真遥操 ROS 2 主节点
+│   └── teleop_gesture_node.py         # 纯手部视觉遥操节点
 ├── package.xml
 ├── setup.py
 └── setup.cfg
@@ -206,14 +226,14 @@ src/tuinadex_teleop/
 ## 4. 自动化测试与验证
 
 ```bash
-# 1. 运行遥操与算法核心单元测试 (81 项全绿，覆盖 IK、重定向、离合器与安全门)
-source scripts/activate_tuinadex.sh control
-pytest tests/teleop/ -v
+# 1. 运行遥操与算法核心单元测试 (107 项全过，覆盖 IK、重定向、离合器与安全门)
+./bin/tuina sys test --suite teleop
+# 或: source scripts/activate_tuinadex.sh control && pytest tests/teleop/ -v
 
-# 2. 运行 ROS 2 复合节点通信与物理闭环集成测试
-source /opt/ros/lyrical/setup.bash && source install/setup.bash
-python3 -m pytest tests/test_teleop_sim_composite_node.py -v
+# 2. 运行真机多相机采集团队与 ROS 2 复合节点集成单测
+source scripts/activate_tuinadex.sh control && pytest tests/test_real_camera_rig.py -v
+ROS_DOMAIN_ID=99 bash -c 'source /opt/ros/lyrical/setup.bash && source install/setup.bash && python3 -m pytest tests/test_teleop_sim_composite_node.py -v'
 
 # 3. 运行全系统 22 维联合控制与启动端到端 E2E 自检
-bash scripts/e2e_unified_robot_check.sh
+./bin/tuina sys e2e --suite unified
 ```

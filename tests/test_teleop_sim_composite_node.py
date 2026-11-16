@@ -419,3 +419,135 @@ def test_teleop_sim_composite_node_safety_hold_freezes_arm_and_hand(rclpy_init):
     finally:
         node.destroy_node()
         sub_node.destroy_node()
+
+
+def test_teleop_sim_composite_node_home_pose_reloads_config_dynamically(rclpy_init, tmp_path):
+    """Verify pressing [R] / calling _handle_home_pose() dynamically reloads ready_pose_deg from file."""
+    import yaml
+    from rclpy.parameter import Parameter
+
+    cfg_file = tmp_path / "teleop_real_posture.yaml"
+    init_deg = [0.0, 70.0, 55.0, -45.0, 0.0, 0.0]
+    updated_deg = [15.0, 45.0, 30.0, -25.0, 5.0, 10.0]
+
+    cfg_file.write_text(
+        yaml.safe_dump({
+            "arm": {
+                "ready_pose_deg": {f"joint{i+1}": v for i, v in enumerate(init_deg)},
+                "motion": {"homing_duration_sec": 1.0},
+            },
+            "teleop": {
+                "IMUaxis": "+x,+y,+z",
+            },
+        }),
+        encoding="utf-8",
+    )
+
+    overrides = [
+        Parameter("mock", Parameter.Type.BOOL, True),
+        Parameter("no_imu", Parameter.Type.BOOL, True),
+        Parameter("use_sim", Parameter.Type.BOOL, False),
+        Parameter("teleop_config", Parameter.Type.STRING, str(cfg_file)),
+        Parameter("publish_rate_hz", Parameter.Type.DOUBLE, 60.0),
+    ]
+    node = TeleopSimCompositeNode(parameter_overrides=overrides)
+    sub_node = rclpy.create_node("teleop_home_reload_test_sub")
+    arm_cmd_received = []
+    sub_node.create_subscription(JointState, "/arm/joint_command", arm_cmd_received.append, 10)
+
+    try:
+        # Initially loaded init_deg & IMUaxis
+        np.testing.assert_allclose(node.ready_arm_q, np.radians(init_deg), atol=1e-5)
+        assert node.imu_axis_mapping == "+x,+y,+z"
+
+        # User modifies teleop_real_posture.yaml while system is running
+        cfg_file.write_text(
+            yaml.safe_dump({
+                "arm": {
+                    "ready_pose_deg": {f"joint{i+1}": v for i, v in enumerate(updated_deg)},
+                    "motion": {"homing_duration_sec": 0.5},
+                },
+                "teleop": {
+                    "IMUaxis": "+y,+x,-z",
+                },
+            }),
+            encoding="utf-8",
+        )
+
+        # Trigger return to ready pose (e.g. user presses [R])
+        node.latest_obs.arm_actual_q = np.radians(init_deg)
+        node._handle_home_pose()
+
+        # Verify ready_arm_q, IK solver home_q and IMUaxis are dynamically synchronized
+        np.testing.assert_allclose(node.ready_arm_q, np.radians(updated_deg), atol=1e-5)
+        np.testing.assert_allclose(node.arm_ik.home_q, np.radians(updated_deg), atol=1e-5)
+        assert node.imu_axis_mapping == "+y,+x,-z"
+        assert node.wrist_imu_tracker.axis_mapping_str == "+y,+x,-z"
+        np.testing.assert_allclose(node.arm_ik.home_q, np.radians(updated_deg), atol=1e-5)
+        assert node._is_homing is True
+
+        # Fast forward time to finish homing
+        node._homing_start_time = time.monotonic() - 1.0
+        node._loop_step()
+        rclpy.spin_once(sub_node, timeout_sec=0.005)
+
+        assert node._is_homing is False
+        assert len(arm_cmd_received) >= 1
+        final_cmd = np.array(arm_cmd_received[-1].position, dtype=np.float64)
+        np.testing.assert_allclose(final_cmd, np.radians(updated_deg), atol=1e-4)
+    finally:
+        node.destroy_node()
+        sub_node.destroy_node()
+
+
+def test_draw_simulation_hud_titles_distinguish_sim_and_real():
+    from tuinadex_teleop.ui.teleop_hud import draw_simulation_hud
+    from tuinadex_teleop.core.clutch import ClutchController
+    from tuinadex_teleop.core.types import TeleopArmCommand, TeleopHandCommand, RobotObservation
+    from tuinadex_teleop.kinematics.arm_ik_solver import ArmOrientationMode, ArmIKMetrics
+    from tuinadex_teleop.kinematics.hand_retargeter import HandRetargetingMetrics
+
+    cam = np.zeros((480, 640, 3), dtype=np.uint8)
+    clutch = ClutchController()
+    arm_cmd = TeleopArmCommand(timestamp=0.0, target_pose=np.eye(4), target_q=np.zeros(6))
+    hand_cmd = TeleopHandCommand(timestamp=0.0, target_q=np.zeros(16))
+    obs = RobotObservation(
+        timestamp=0.0,
+        arm_actual_q=np.zeros(6),
+        arm_actual_dq=np.zeros(6),
+        arm_effort=np.zeros(6),
+        hand_actual_q=np.zeros(16),
+    )
+    arm_metrics = ArmIKMetrics()
+    hand_metrics = HandRetargetingMetrics()
+
+    hud_sim = draw_simulation_hud(
+        camera_view=cam,
+        clutch=clutch,
+        orientation_mode=ArmOrientationMode.FIXED_DOWNWARD,
+        arm_cmd=arm_cmd,
+        hand_cmd=hand_cmd,
+        obs=obs,
+        forces={},
+        arm_metrics=arm_metrics,
+        hand_metrics=hand_metrics,
+        fps=60.0,
+        is_sim=True,
+    )
+    assert hud_sim.shape == (480, 640 + 640, 3)
+
+    hud_real = draw_simulation_hud(
+        camera_view=cam,
+        clutch=clutch,
+        orientation_mode=ArmOrientationMode.FIXED_DOWNWARD,
+        arm_cmd=arm_cmd,
+        hand_cmd=hand_cmd,
+        obs=obs,
+        forces={},
+        arm_metrics=arm_metrics,
+        hand_metrics=hand_metrics,
+        fps=60.0,
+        is_sim=False,
+    )
+    assert hud_real.shape == (480, 640 + 640, 3)
+

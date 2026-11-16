@@ -81,8 +81,21 @@ class TeleopBridgeNode(Node):
         self.obs_q_22 = np.zeros(22, dtype=np.float32)
         self.obs_effort_22 = np.zeros(22, dtype=np.float32)
 
-        # Default arm ready posture (DEFAULT_READY_ARM_Q)
-        self.q_22[:6] = [0.1511, 1.0429, 0.7581, -0.2432, 1.4212, 0.0]
+        # Arm ready posture from teleop_real_posture.yaml
+        self.q_22[:6] = [0.0, 1.2217, 0.9599, -0.7854, 0.0, 0.0]
+        try:
+            import yaml
+            from pathlib import Path
+            cfg_p = Path(__file__).resolve().parent.parent / "src" / "tuinadex_teleop" / "configs" / "teleop_real_posture.yaml"
+            if cfg_p.is_file():
+                with open(cfg_p, "r", encoding="utf-8") as f:
+                    cfg_data = yaml.safe_load(f) or {}
+                r_dict = cfg_data.get("arm", {}).get("ready_pose_deg", {})
+                if isinstance(r_dict, dict) and len(r_dict) >= 6:
+                    degs = [float(r_dict.get(f"joint{i+1}", 0.0)) for i in range(6)]
+                    self.q_22[:6] = np.radians(degs).astype(np.float32)
+        except Exception:
+            pass
 
         self.udp_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self.dest_addr = ("127.0.0.1", UDP_TARGET_PORT)

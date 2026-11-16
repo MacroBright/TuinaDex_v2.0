@@ -75,7 +75,24 @@ fi
 export ROS_DOMAIN_ID=${ROS_DOMAIN_ID_TARGET}
 
 # Check whether rmw_cyclonedds_cpp is actually present on host
-if [ -f "/opt/ros/lyrical/lib/librmw_cyclonedds_cpp.so" ] || [ -f "/usr/lib/librmw_cyclonedds_cpp.so" ]; then
+ROS_DISTRO_LOCAL="${ROS_DISTRO:-lyrical}"
+_cyclonedds_found=0
+for _lib_cand in \
+    "/opt/ros/${ROS_DISTRO_LOCAL}/lib/librmw_cyclonedds_cpp.so" \
+    "/opt/ros/${ROS_DISTRO_LOCAL}/lib/x86_64-linux-gnu/librmw_cyclonedds_cpp.so" \
+    "/opt/ros/${ROS_DISTRO_LOCAL}/lib/aarch64-linux-gnu/librmw_cyclonedds_cpp.so" \
+    "/opt/ros/humble/lib/librmw_cyclonedds_cpp.so" \
+    "/opt/ros/jazzy/lib/librmw_cyclonedds_cpp.so" \
+    "/usr/lib/librmw_cyclonedds_cpp.so" \
+    "/usr/lib/x86_64-linux-gnu/librmw_cyclonedds_cpp.so" \
+    "/usr/lib/aarch64-linux-gnu/librmw_cyclonedds_cpp.so"; do
+    if [ -f "${_lib_cand}" ]; then
+        _cyclonedds_found=1
+        break
+    fi
+done
+
+if [ "${_cyclonedds_found}" -eq 1 ]; then
     export RMW_IMPLEMENTATION=${RMW_TARGET}
     export CYCLONEDDS_URI="file://${DEFAULT_XML_PATH}"
 else
@@ -83,6 +100,7 @@ else
     unset RMW_IMPLEMENTATION 2>/dev/null || true
     unset CYCLONEDDS_URI 2>/dev/null || true
 fi
+unset _cyclonedds_found _lib_cand ROS_DISTRO_LOCAL
 
 echo "[TD_v2.0-DDS] Environment active for current shell:"
 echo "  - ROS_DOMAIN_ID: ${ROS_DOMAIN_ID}"

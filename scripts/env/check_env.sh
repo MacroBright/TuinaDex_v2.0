@@ -96,15 +96,35 @@ fi
 
 # 5. Conda / Python Environments
 echo -e "\n${BOLD}[5] Conda / Virtual Environments:${NC}"
-CONDA_DIR="${HOME}/win_office/conda/envs"
+CONDA_DIR_CANDIDATES=(
+    "${HOME}/win_office/conda/envs"
+    "${HOME}/miniforge3/envs"
+    "${HOME}/miniconda3/envs"
+    "${HOME}/anaconda3/envs"
+    "${HOME}/mambaforge/envs"
+    "/opt/conda/envs"
+    "/opt/miniforge3/envs"
+)
 for env_name in "tuinadex-control" "tuinadex-vla"; do
-    if [ -d "${CONDA_DIR}/${env_name}" ]; then
-        PY_VER=$("${CONDA_DIR}/${env_name}/bin/python" --version 2>&1 || echo "error")
-        echo -e "  - Conda ${env_name}: ${GREEN}Found (${PY_VER})${NC}"
-    else
-        echo -e "  - Conda ${env_name}: ${YELLOW}Not found in ${CONDA_DIR}/${NC}"
+    _env_found=0
+    for cand_dir in "${CONDA_DIR_CANDIDATES[@]}"; do
+        if [ -d "${cand_dir}/${env_name}" ]; then
+            PY_VER=$("${cand_dir}/${env_name}/bin/python" --version 2>&1 || echo "error")
+            echo -e "  - Conda ${env_name}: ${GREEN}Found (${PY_VER})${NC}"
+            _env_found=1
+            break
+        fi
+    done
+    if [ "${_env_found}" -eq 0 ]; then
+        if [ -n "${CONDA_PREFIX:-}" ] && [ "$(basename "${CONDA_PREFIX}")" = "${env_name}" ]; then
+            PY_VER=$("${CONDA_PREFIX}/bin/python" --version 2>&1 || echo "error")
+            echo -e "  - Conda ${env_name}: ${GREEN}Active via CONDA_PREFIX (${PY_VER})${NC}"
+        else
+            echo -e "  - Conda ${env_name}: ${YELLOW}Not found in standard paths${NC}"
+        fi
     fi
 done
+unset CONDA_DIR_CANDIDATES _env_found cand_dir
 
 # 6. Docker Daemon
 echo -e "\n${BOLD}[6] Containerization (Docker):${NC}"

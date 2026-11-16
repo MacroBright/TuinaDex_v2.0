@@ -220,8 +220,8 @@ class TeleopSimCompositeNode(Node):
                 self.imu_stream = MockImuStream()
                 self.imu_stream.start()
 
-        # 2. Kinematics & Controllers
-        self.wrist_tracker = WristTracker(default_handedness="Right")
+        # 2. Kinematics & Controllers (固定锁定右手，彻底杜绝手背微侧倾时的左右手突变反转)
+        self.wrist_tracker = WristTracker(default_handedness="Right", lock_handedness=True)
         if self.mock:
             cx, cy = self.intrinsics.cx, self.intrinsics.cy
             def synthetic_mock_hand(img):
@@ -402,6 +402,12 @@ class TeleopSimCompositeNode(Node):
                             self._set_hand_hold(True, source="HUB_UDP")
                         elif data == b"HAND_HOLD:0":
                             self._set_hand_hold(False, source="HUB_UDP")
+                        elif data == b"AXIS_CYCLE":
+                            self._handle_axis_cycle()
+                        elif data == b"IMU_AXES_CYCLE":
+                            self._handle_cycle_imu_axes(forward=True)
+                        elif data == b"IMU_AXES_CYCLE_REV":
+                            self._handle_cycle_imu_axes(forward=False)
                     except socket.timeout:
                         continue
                     except Exception:
@@ -806,8 +812,10 @@ class TeleopSimCompositeNode(Node):
                 safety_report=self.safety_report,
                 toast=self.hotkeys.active_toast(time.time()),
                 hand_hold=self._hand_hold_enabled,
+                is_sim=self.use_sim,
             )
-            cv2.imshow("TuinaDex 22-DOF Teleoperation HUD", dashboard)
+            win_title = "TuinaDex 22-DOF Teleoperation HUD [仿真 (MuJoCo)]" if self.use_sim else "TuinaDex 22-DOF Teleoperation HUD [真机 (Real)]"
+            cv2.imshow(win_title, dashboard)
             key = cv2.waitKey(1) & 0xFF
             if key in (27, ord("q"), ord("Q")):
                 if not self._is_exiting_zero:
@@ -1025,6 +1033,10 @@ class TeleopSimCompositeNode(Node):
             self._hand_hold_enabled = False
             self._hand_hold_q = None
         self.clutch.disengage()
+
+        # 每次按 [R]/[H] 键或收到回位信号时，动态同步重载最新的 teleop_real_posture.yaml 准备姿态配置 (arm.ready_pose_deg)
+        self._load_teleop_posture_config()
+
         self.arm_ik.reset()
         self.hand_retargeter.reset()
         # 清除任何历史冻结或避险状态，允许一键平滑回位
@@ -1056,9 +1068,10 @@ class TeleopSimCompositeNode(Node):
         self._homing_start_time = time.monotonic()
         self._is_homing = True
 
-        self._notify_hotkey("一键回位: 机械臂与灵巧手正平滑移动至准备姿态...")
+        deg_str = ", ".join(f"{round(float(math.degrees(x)), 1)}°" for x in self.ready_arm_q)
+        self._notify_hotkey(f"一键回位: 机械臂与灵巧手正平滑移动至准备姿态 [{deg_str}]...")
         self.get_logger().info(
-            f"一键回位启动: 臂手开始平滑插值过渡至推拿准备姿态 (历时 {self._homing_duration}s)..."
+            f"一键回位启动: 臂手开始平滑插值过渡至推拿准备姿态 [{deg_str}] (历时 {self._homing_duration}s)..."
         )
 
     def _start_safe_exit_to_zero(self) -> None:
@@ -1195,9 +1208,11 @@ class TeleopSimCompositeNode(Node):
         if cfg_val:
             cfg_path = _resolve_config_path(cfg_val)
         else:
-            default_p = _resolve_config_path("configs/teleop_real_posture.yaml")
-            if default_p.is_file():
-                cfg_path = default_p
+            for cand in ("configs/teleop_real_posture.yaml", "src/tuinadex_teleop/configs/teleop_real_posture.yaml"):
+                default_p = _resolve_config_path(cand)
+                if default_p.is_file():
+                    cfg_path = default_p
+                    break
 
         if cfg_path is None or not cfg_path.is_file():
             return
@@ -1229,6 +1244,19 @@ class TeleopSimCompositeNode(Node):
                 if rad_list and len(rad_list) == ARM_NUM_DOFS:
                     self.ready_arm_q = np.array(rad_list, dtype=np.float64)
 
+            # 同步更新运动学求解器基准姿态与笛卡尔正运动学零位参考
+            if hasattr(self, "arm_ik") and self.arm_ik is not None:
+                self.arm_ik.home_q = self.ready_arm_q.copy()
+                self.home_pos, self.home_R = self.arm_ik.forward_kinematics(self.ready_arm_q)
+            if hasattr(self, "clutch") and self.clutch is not None:
+                if hasattr(self, "home_pos") and self.home_pos is not None:
+                    self.clutch.home_pos = self.home_pos.copy()
+                if hasattr(self, "home_R") and self.home_R is not None:
+                    self.clutch.home_rot = self.home_R.copy()
+            if hasattr(self, "wrist_imu_tracker") and self.wrist_imu_tracker is not None:
+                if hasattr(self, "home_R") and self.home_R is not None:
+                    self.wrist_imu_tracker.neutral_robot_rot = self.home_R.copy()
+
             # 2. 平滑回位耗时
             motion_data = arm_data.get("motion", {})
             if "homing_duration_sec" in motion_data:
@@ -1247,6 +1275,17 @@ class TeleopSimCompositeNode(Node):
                 if h_list and len(h_list) == HAND_NUM_DOFS:
                     self.ready_hand_q = np.array(h_list, dtype=np.float64)
 
+            # 动态更新灵巧手滤波平滑参数 (1€ filter: cutoff, beta, deadband)
+            if hasattr(self, "hand_retargeter") and self.hand_retargeter is not None:
+                if hasattr(self.hand_retargeter, "_filter"):
+                    f = self.hand_retargeter._filter
+                    if "filter_cutoff" in hand_data:
+                        f.min_cutoff = max(0.05, float(hand_data["filter_cutoff"]))
+                    if "filter_beta" in hand_data:
+                        f.beta = max(0.001, float(hand_data["filter_beta"]))
+                    if "filter_deadband" in hand_data:
+                        f.deadband = max(0.0, float(hand_data["filter_deadband"]))
+
             # 4. 遥控交互与轴对齐配置
             teleop_data = data.get("teleop", {})
             if "axis_mapping" in teleop_data:
@@ -1258,10 +1297,25 @@ class TeleopSimCompositeNode(Node):
                     if hasattr(self, "hotkeys") and self.hotkeys is not None:
                         self.hotkeys.axis_mapping = m_str
 
+            imu_map_str = None
+            for key in ("IMUaxis", "imu_axis_mapping", "imu_axis", "imuaxis"):
+                if key in teleop_data:
+                    imu_map_str = str(teleop_data[key]).strip()
+                    break
+            if not imu_map_str and "imu" in data and isinstance(data["imu"], dict):
+                for key in ("IMUaxis", "imu_axis_mapping", "imu_axis", "imuaxis"):
+                    if key in data["imu"]:
+                        imu_map_str = str(data["imu"][key]).strip()
+                        break
+            if imu_map_str:
+                self.imu_axis_mapping = imu_map_str
+                if hasattr(self, "wrist_imu_tracker") and self.wrist_imu_tracker is not None:
+                    self.wrist_imu_tracker.set_axis_mapping(imu_map_str)
+
             self.get_logger().info(
                 f"[CONFIG] 成功从 {cfg_path.name} 加载真机准备姿态配置: "
                 f"机械臂就绪姿态={[round(float(math.degrees(x)), 2) for x in self.ready_arm_q]}°, "
-                f"回位时长={self._homing_duration}s, 轴映射={self.axis_mapping}"
+                f"回位时长={self._homing_duration}s, 轴映射={self.axis_mapping}, IMU轴映射={self.imu_axis_mapping}"
             )
         except Exception as e:
             self.get_logger().warning(f"读取真机姿态配置 {cfg_path} 异常: {e}，回退使用系统默认值。")

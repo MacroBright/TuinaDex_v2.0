@@ -13,7 +13,7 @@
   <header class="topbar">
     <div class="identity">
       <p class="kicker">TUINADEX · 22-DOF EMBODIED WORKSTATION</p>
-      <h1>中医推拿多模态数据采集 Hub</h1>
+      <h1>中医推拿多模态数据采集 Hub <span id="env-badge" class="env-badge env-sim">(仿真 MuJoCo)</span></h1>
     </div>
 
     <!-- 任务语义与阶段快速设定 -->
@@ -79,6 +79,13 @@
           </div>
 
           <div class="osd-bottom-right">
+            <div class="osd-pill osd-device-picker" id="primary-device-picker" title="选择当前主视角的物理摄像头">
+              <span class="device-icon">📷</span>
+              <select id="primary-device-select" class="osd-select" aria-label="选择主视角物理相机">
+                <option value="">检测设备中...</option>
+              </select>
+              <button type="button" id="btn-refresh-devices" class="osd-btn-icon" title="重新扫描 USB 摄像头">🔄</button>
+            </div>
             <div class="osd-pill osd-view-tag" id="primary-view-tag" title="点击或按 Tab 切换主视角">
               <span id="primary-view-name">等待相机连接...</span>
               <small class="tab-hint">[Tab 交换]</small>
@@ -121,8 +128,8 @@
           <button type="button" class="btn-action btn-discard" data-act="discard" title="舍弃当前试次 (D)">
             <span class="btn-icon-symbol">✕</span> 丢弃 <kbd>D</kbd>
           </button>
-          <button type="button" class="btn-action btn-home" data-act="home" title="一键回到初始姿态 (H)">
-            <span class="btn-icon-symbol">⟲</span> 回初始姿态 <kbd>H</kbd>
+          <button type="button" class="btn-action btn-home" data-act="home" title="一键回到初始姿态 (R / H)">
+            <span class="btn-icon-symbol">⟲</span> 回初始姿态 <kbd>R/H</kbd>
           </button>
           <button type="button" class="btn-action btn-hand-hold" id="btn-hand-hold" data-act="hand_hold" title="保持灵巧手当前动作 / 恢复跟随 (L)">
             <span class="btn-icon-symbol">✋</span> <span id="btn-hand-hold-label">灵巧手保持当前动作</span> <kbd>L</kbd>
@@ -214,6 +221,9 @@
       <div class="dock-pill"><kbd>Space</kbd> 录制 / 停止</div>
       <div class="dock-pill"><kbd>S</kbd> 批准保存</div>
       <div class="dock-pill"><kbd>D</kbd> 舍弃重来</div>
+      <div class="dock-pill"><kbd>R / H</kbd> 回初始姿态</div>
+      <div class="dock-pill"><kbd>A</kbd> 位置映射轴 (PosAxis)</div>
+      <div class="dock-pill"><kbd>X</kbd> IMU姿态轴 (IMUAxis)</div>
       <div class="dock-pill"><kbd>L</kbd> 灵巧手保持 / 跟随</div>
       <div class="dock-pill"><kbd>Tab</kbd> 交换主副机位</div>
       <div class="dock-pill"><kbd>1-4</kbd> 切换手法阶段</div>

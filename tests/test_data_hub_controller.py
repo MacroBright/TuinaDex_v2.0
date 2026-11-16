@@ -159,3 +159,36 @@ def test_submit_hand_hold_toggle_and_home_reset():
         assert ctrl.status()["hand_hold"] is False
     finally:
         ctrl.shutdown()
+
+
+def test_submit_axis_cycle_and_imu_axes_cycle_invokes_callbacks():
+    channel, collector, ctrl = _make()
+    axis_invoked = []
+    imu_invoked = []
+    ctrl.on_axis_cycle = lambda: axis_invoked.append(True)
+    ctrl.on_imu_axes_cycle = lambda: imu_invoked.append(True)
+    try:
+        assert ctrl.submit("axis_cycle")["ok"] is True
+        ctrl.tick()
+        assert axis_invoked == [True]
+
+        assert ctrl.submit("imu_axes_cycle")["ok"] is True
+        ctrl.tick()
+        assert imu_invoked == [True]
+    finally:
+        ctrl.shutdown()
+
+
+def test_data_hub_controller_environment_tag():
+    channel, collector, ctrl_sim = _make(env="sim")
+    try:
+        assert ctrl_sim.status()["env"] == "sim"
+    finally:
+        ctrl_sim.shutdown()
+
+    channel2, collector2, ctrl_real = _make(env="real")
+    try:
+        assert ctrl_real.status()["env"] == "real"
+    finally:
+        ctrl_real.shutdown()
+

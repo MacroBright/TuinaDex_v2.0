@@ -248,12 +248,13 @@ cd /home/bright/win_office/ubantu_files/project/TuinaDex_v2.0
 source /opt/ros/lyrical/setup.bash
 
 # 1. 快速更新安装空间 (采用符号链接安装，通常直接生效)
-colcon build --symlink-install --packages-select tuinadex_sim
-source install/setup.bash
+./bin/tuina sys build --packages tuinadex_sim
 
 # 2. 运行单测验证动力学桥接器与时钟未被破坏
-~/win_office/conda/envs/tuinadex-control/bin/python -m pytest tests/test_sim_bridge.py tests/test_sim_core.py -v
+source scripts/activate_tuinadex.sh control
+pytest tests/test_sim_bridge.py tests/test_sim_core.py -v
 
-# 3. 运行 22 维联合控制与启动端到端 E2E 终验
-bash scripts/e2e_unified_robot_check.sh
+# 3. 运行闭环步进抖动探针与 22 维端到端 E2E 终验
+./bin/tuina sys probe --position 0.2 --active-sec 1.5 --settle-sec 2.0
+./bin/tuina sys e2e --suite unified
 ```

@@ -1,6 +1,6 @@
 # ReBot Arm RS 机械描述包
 
-本目录是可独立复制的 B601-RS 机械描述资源。RS/DM 总体差异及跨引擎复用说明见上一级 [`README.md`](../README.md)。
+本目录是可独立复制的 B601-RS 机械描述资源。RS/DM 总体差异及跨引擎复用说明见 [`tuinadex_arm README.md`](../../README.md)。
 
 ```text
 RS/

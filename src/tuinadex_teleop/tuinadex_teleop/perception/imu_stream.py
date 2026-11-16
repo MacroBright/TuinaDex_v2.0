@@ -426,6 +426,26 @@ class ImuStream:
         self._is_connected = False
         self._last_reading = ImuReading()
 
+    @staticmethod
+    def _is_hand_serial(dev_path: str) -> bool:
+        """Protect LEAP Hand U2D2 serial port (FTDI 0403:6014/6001) from accidental IMU grab."""
+        try:
+            from pathlib import Path
+            real_name = os.path.basename(os.path.realpath(dev_path))
+            sys_p = Path(f"/sys/bus/usb-serial/devices/{real_name}")
+            if sys_p.exists():
+                usb_dev = sys_p.resolve().parents[1]
+                vid_file = usb_dev / "idVendor"
+                pid_file = usb_dev / "idProduct"
+                if vid_file.exists() and pid_file.exists():
+                    vid = vid_file.read_text().strip()
+                    pid = pid_file.read_text().strip()
+                    if vid == "0403" and pid in ("6001", "6014", "6010", "6011"):
+                        return True
+        except Exception:
+            pass
+        return False
+
     def _resolve_port(self) -> Optional[str]:
         """Check user requested port and standard candidate paths."""
         candidates = [self.port, "/dev/myimu", "/dev/ttyUSB0", "/dev/ttyUSB1", "/dev/ttyUSB2"] if self.auto_detect else [self.port]
@@ -434,6 +454,9 @@ class ImuStream:
             if p and p not in seen:
                 seen.add(p)
                 if os.path.exists(p):
+                    # 严禁将 LEAP Hand 的 FTDI 串口误判为 IMU
+                    if self._is_hand_serial(p):
+                        continue
                     return p
         return None
 

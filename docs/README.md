@@ -20,7 +20,13 @@ docs/
 │   ├── 0002-architecture-decisions-sim.md            # ADR-002: 500Hz MuJoCo 动力学与 50Hz 定时器解耦
 │   └── 0003-data-collection-hub-and-lerobot-pipeline.md # ADR-003: 零依赖 Web UI Hub 与 LeRobotDataset v3.0 管道
 │
-└── superpowers/plans/            # 专项技术演进与设计实施计划
+├── images/                       # 文档配图与实测截图
+│   ├── teleop_hub.png            # 22-DOF 视-惯协同遥操实时 HUD 仪表盘截图
+│   ├── teleop_sim1.png           # MuJoCo 22-DOF 推拿场景动力学仿真视窗截图
+│   └── teleop_sim2.png           # MuJoCo 22-DOF 场景多视角仿真截图
+│
+└── superpowers/plans/            # 专项技术演进与系统落地实施计划
+    └── 2026-11-12-system-cli-encapsulation.md # 八大域系统级 CLI (tuina) 架构与三运行时隔离方案
 ```
 
 ---

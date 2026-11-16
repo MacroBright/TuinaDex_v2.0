@@ -9,6 +9,7 @@ import os
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, RegisterEventHandler, EmitEvent
+from launch.conditions import IfCondition
 from launch.event_handlers import OnProcessExit
 from launch.events import Shutdown
 from launch.substitutions import LaunchConfiguration
@@ -51,17 +52,29 @@ def generate_launch_description():
     rate_hz_arg = DeclareLaunchArgument(
         "rate_hz", default_value="60.0", description="Publish and control loop rate in Hz"
     )
+    has_myimu = os.path.exists("/dev/myimu")
+    default_no_imu = "false" if has_myimu else "true"
     no_imu_arg = DeclareLaunchArgument(
-        "no_imu", default_value="false", description="Disable IMU attitude tracking"
+        "no_imu",
+        default_value=default_no_imu,
+        description="Disable IMU attitude tracking (auto-true if /dev/myimu is absent)",
     )
     axis_mapping_arg = DeclareLaunchArgument(
         "axis_mapping", default_value="+y,-x,+z", description="Human wrist to robot pos mapping"
+    )
+    imu_axis_mapping_arg = DeclareLaunchArgument(
+        "imu_axis_mapping", default_value="+x,+y,+z", description="IMU attitude mapping (IMUaxis)"
     )
     mock_hand_default = "true" if not os.path.exists("/dev/ttyUSB0") else "false"
     mock_hand_arg = DeclareLaunchArgument(
         "mock_hand",
         default_value=mock_hand_default,
         description="Run LEAP hand in mock mode (auto-detected true if /dev/ttyUSB0 is absent)",
+    )
+    enable_arm_arg = DeclareLaunchArgument(
+        "enable_arm",
+        default_value="true",
+        description="Enable 6-DOF reBot arm driver (set false to debug hand only)",
     )
 
     # 1. 灵巧手硬件驱动节点
@@ -80,7 +93,7 @@ def generate_launch_description():
         ],
     )
 
-    # 2. 机械臂硬件驱动节点
+    # 2. 机械臂硬件驱动节点 (支持单独调试灵巧手时禁用)
     arm_node = Node(
         package="tuinadex_arm",
         executable="arm_node",
@@ -94,6 +107,7 @@ def generate_launch_description():
                 "control_rate_hz": LaunchConfiguration("rate_hz"),
             },
         ],
+        condition=IfCondition(LaunchConfiguration("enable_arm")),
     )
 
     # 3. 22-DOF 臂手联合视觉遥操作节点 (use_sim:=false)
@@ -114,6 +128,7 @@ def generate_launch_description():
             "publish_rate_hz": LaunchConfiguration("rate_hz"),
             "gui": LaunchConfiguration("gui"),
             "axis_mapping": LaunchConfiguration("axis_mapping"),
+            "imu_axis_mapping": LaunchConfiguration("imu_axis_mapping"),
             "teleop_config": LaunchConfiguration("teleop_config"),
         }],
     )
@@ -132,11 +147,13 @@ def generate_launch_description():
         camera_id_arg,
         teleop_config_arg,
         axis_mapping_arg,
+        imu_axis_mapping_arg,
         mock_arg,
         gui_arg,
         rate_hz_arg,
         no_imu_arg,
         mock_hand_arg,
+        enable_arm_arg,
         arm_node,
         hand_node,
         teleop_node,

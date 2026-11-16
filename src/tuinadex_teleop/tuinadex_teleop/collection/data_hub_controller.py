@@ -27,6 +27,8 @@ class HubAction(str, Enum):
     LABEL = "label"
     HOME = "home"
     HAND_HOLD = "hand_hold"
+    AXIS_CYCLE = "axis_cycle"
+    IMU_AXES_CYCLE = "imu_axes_cycle"
 
 
 class DataHubController:
@@ -40,6 +42,7 @@ class DataHubController:
         ui_fps: float = 25.0,
         max_staleness_s: float = 0.06,
         max_consecutive_stale: int = 3,
+        env: str | None = None,
     ):
         if control_fps <= 0 or ui_fps <= 0:
             raise ValueError("control_fps and ui_fps must be > 0")
@@ -52,6 +55,11 @@ class DataHubController:
         self.ui_fps = float(ui_fps)
         self.max_staleness_s = float(max_staleness_s)
         self.max_consecutive_stale = int(max_consecutive_stale)
+        if env is not None:
+            self.env = str(env).strip().lower()
+        else:
+            cls_name = channel.__class__.__name__
+            self.env = "real" if "Real" in cls_name else "sim"
 
         self._lock = threading.RLock()
         self._commands: queue.Queue = queue.Queue(maxsize=32)
@@ -80,6 +88,8 @@ class DataHubController:
         self.on_save: Callable[[EpisodeBuffer], None] | None = None
         self.on_home: Callable[[], None] | None = None
         self.on_hand_hold: Callable[[bool], None] | None = None
+        self.on_axis_cycle: Callable[[], None] | None = None
+        self.on_imu_axes_cycle: Callable[[], None] | None = None
         self.collector.on_save = self._enqueue_save
 
     def submit(self, action: str, payload: dict | None = None) -> dict:
@@ -88,6 +98,12 @@ class DataHubController:
             parsed_action = HubAction(action)
         except ValueError:
             return {"ok": False, "error": f"unknown action '{action}'"}
+        if parsed_action == HubAction.START:
+            if hasattr(self.channel, "is_ready") and not self.channel.is_ready():
+                return {
+                    "ok": False,
+                    "error": "请先在下拉菜单为所有视角绑定有效物理相机",
+                }
         try:
             self._commands.put_nowait((parsed_action, payload or {}))
         except queue.Full:
@@ -100,6 +116,7 @@ class DataHubController:
             buffer = self.collector.buffer
             return {
                 "state": self.collector.state.name,
+                "env": self.env,
                 "episode_index": getattr(buffer, "episode_index", 0),
                 "frames_recorded": len(buffer),
                 "image_bytes": getattr(buffer, "image_bytes", 0),
@@ -114,6 +131,16 @@ class DataHubController:
                 "last_save_error": self._last_save_error,
                 "hand_hold": self._hand_hold,
                 "telemetry": self._last_telemetry,
+                "can_record": (
+                    self.channel.is_ready()
+                    if hasattr(self.channel, "is_ready")
+                    else True
+                ),
+                "bindings": (
+                    self.channel.get_bindings()
+                    if hasattr(self.channel, "get_bindings")
+                    else {}
+                ),
             }
 
     def tick(self) -> None:
@@ -186,6 +213,18 @@ class DataHubController:
                     self.on_hand_hold(self._hand_hold)
                 except Exception:
                     logger.exception("on_hand_hold callback failed")
+        elif action is HubAction.AXIS_CYCLE:
+            if self.on_axis_cycle is not None:
+                try:
+                    self.on_axis_cycle()
+                except Exception:
+                    logger.exception("on_axis_cycle callback failed")
+        elif action is HubAction.IMU_AXES_CYCLE:
+            if self.on_imu_axes_cycle is not None:
+                try:
+                    self.on_imu_axes_cycle()
+                except Exception:
+                    logger.exception("on_imu_axes_cycle callback failed")
         elif action is HubAction.LABEL:
             if "phase_label" in payload:
                 self._phase_label = str(payload["phase_label"])

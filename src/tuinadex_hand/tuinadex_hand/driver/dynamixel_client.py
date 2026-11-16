@@ -171,6 +171,21 @@ class DynamixelClient:
                 ('Failed to set the baudrate to {} (Ensure that the device was '
                  'configured for this baudrate).').format(self.baudrate))
 
+        # 尝试优化 FTDI 驱动延迟定时器 (16ms -> 1ms，消除 SyncRead 超时与总线抖动)
+        try:
+            import os
+            real_dev = os.path.basename(os.path.realpath(self.port_name))
+            latency_path = f"/sys/bus/usb-serial/devices/{real_dev}/latency_timer"
+            if os.path.exists(latency_path):
+                with open(latency_path, "r") as f:
+                    cur_val = f.read().strip()
+                if cur_val != "1":
+                    with open(latency_path, "w") as f:
+                        f.write("1")
+                    logging.info(f"Auto-configured {real_dev} latency_timer from {cur_val}ms to 1ms.")
+        except Exception:
+            pass
+
         # Start with all motors enabled.  NO, I want to set settings before enabled
         #self.set_torque_enabled(self.motor_ids, True)
 

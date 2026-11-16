@@ -21,8 +21,10 @@ from tuinadex_teleop.cameras import (
     RealCameraProducerThread,
     decode_jpeg_to_rgb,
     load_real_camera_configs,
+    make_unbound_jpeg_frame,
     parse_camera_map,
     resolve_default_camera_config_path,
+    save_real_camera_device,
 )
 from tuinadex_teleop.collection.data_channel import RealDataChannel
 
@@ -260,3 +262,78 @@ def test_hub_index_html_avoids_hardcoded_wrist_img() -> None:
     assert 'src="/video/wrist"' not in html
     assert 'id="primary-img"' in html
     assert 'id="secondary-strip"' in html
+    assert 'id="primary-device-select"' in html
+    assert 'id="btn-refresh-devices"' in html
+
+
+def test_make_unbound_jpeg_frame() -> None:
+    jpg = make_unbound_jpeg_frame("overhead", 640, 480)
+    assert jpg.startswith(b"\xff\xd8")
+    rgb = decode_jpeg_to_rgb(jpg)
+    assert rgb.shape == (480, 640, 3)
+    # The placeholder has dark background and yellow/white text
+    assert np.mean(rgb) > 10.0
+
+
+def test_save_real_camera_device(tmp_path: Path) -> None:
+    cfg_file = tmp_path / "real_cameras.yaml"
+    cfg_file.write_text(
+        """
+cameras:
+  overhead:
+    device: "/dev/video8"
+  side:
+    device: "/dev/video6"
+""".strip(),
+        encoding="utf-8",
+    )
+    # Rebind overhead to video6 (swapping/re-assigning)
+    save_real_camera_device("overhead", "/dev/video6", config_path=cfg_file)
+    import yaml
+
+    loaded = yaml.safe_load(cfg_file.read_text(encoding="utf-8"))
+    cams = loaded["cameras"]
+    assert cams["overhead"]["device"] == "/dev/video6"
+    # Side camera should have been cleared of the duplicate device
+    assert cams["side"]["device"] == ""
+
+
+def test_real_camera_producer_dynamic_rebinding() -> None:
+    cfgs = [
+        RealCameraConfig(name="overhead", device="/dev/fake_over"),
+        RealCameraConfig(name="side", device=""),  # unbound initially
+    ]
+    captures: dict[str, _FakeCapture] = {}
+
+    def _factory(cfg: RealCameraConfig) -> _FakeCapture:
+        cap = _FakeCapture((10, 10, 200), width=640, height=480)
+        captures[cfg.name] = cap
+        return cap
+
+    producer = RealCameraProducerThread(cfgs, target_fps=30.0, capture_factory=_factory)
+    producer.start()
+    try:
+        # Side is unbound, so is_all_bound is False initially
+        assert producer.is_all_bound() is False
+        latest = producer.latest()
+        assert "overhead" in latest
+        assert "side" in latest
+        # Side returns placeholder jpeg
+        assert latest["side"][0].startswith(b"\xff\xd8")
+
+        # Now dynamically bind side to /dev/fake_side
+        ok = producer.bind_camera("side", "/dev/fake_side")
+        assert ok is True
+        assert producer.is_all_bound() is True
+        bindings = producer.get_bindings()
+        assert bindings["overhead"] == "/dev/fake_over"
+        assert bindings["side"] == "/dev/fake_side"
+
+        # Dynamically unbind side
+        ok_unbind = producer.bind_camera("side", "")
+        assert ok_unbind is True
+        assert producer.is_all_bound() is False
+        assert producer.get_bindings()["side"] == ""
+    finally:
+        producer.stop(timeout=2.0)
+

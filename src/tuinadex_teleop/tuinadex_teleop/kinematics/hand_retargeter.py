@@ -121,6 +121,23 @@ def angle_between_vectors(v1: np.ndarray, v2: np.ndarray) -> float:
     return float(math.acos(cos_a))
 
 
+def calc_mcp_flexion(v_prox: np.ndarray, deadband_rad: float = 0.035) -> float:
+    """Compute robust, frame-invariant MCP pitch flexion angle with flat deadband latch.
+
+    In the palm orthonormal frame, natural finger flexion points strictly toward -Z (palmar),
+    while forward longitudinal extension is along +Y.
+    When the arm tilts without actual finger curl, micro Z depth jitter (< 2 deg) is absorbed,
+    ensuring fingers stay firmly stationary (0 rad) during pure arm rotation or translation.
+    """
+    v_norm = float(np.linalg.norm(v_prox))
+    if v_norm < 1e-5:
+        return 0.0
+    raw_ang = math.atan2(-v_prox[2], v_prox[1])
+    if raw_ang <= deadband_rad:
+        return 0.0
+    return raw_ang
+
+
 class BiomechanicalKinematicRetargeter:
     """High-precision analytical bone-segment retargeter with Ulnar Synergy Fusion.
     
@@ -168,8 +185,8 @@ class BiomechanicalKinematicRetargeter:
         # Lateral spread (yaw): project against sagittal length hypot(v_y, v_z) to avoid division by zero during flexion
         r_sagittal_idx = math.hypot(v_prox_idx[1], v_prox_idx[2])
         q[0] = math.atan2(v_prox_idx[0], max(1e-4, r_sagittal_idx)) * 0.70
-        # MCP pitch flexion: continuous atan2(-v_z, v_y) preventing reversal past 90 deg into fist
-        ang_mcp_idx = math.atan2(-v_prox_idx[2], v_prox_idx[1])
+        # MCP pitch flexion: frame-invariant projection with flat deadband protection
+        ang_mcp_idx = calc_mcp_flexion(v_prox_idx)
         ang_pip_idx = angle_between_vectors(v_prox_idx, v_inter_idx)
         ang_dip_idx = angle_between_vectors(v_inter_idx, v_dist_idx)
 
@@ -187,7 +204,7 @@ class BiomechanicalKinematicRetargeter:
 
         r_sagittal_mid = math.hypot(v_prox_mid[1], v_prox_mid[2])
         q[4] = math.atan2(v_prox_mid[0], max(1e-4, r_sagittal_mid)) * 0.70
-        ang_mcp_mid = math.atan2(-v_prox_mid[2], v_prox_mid[1])
+        ang_mcp_mid = calc_mcp_flexion(v_prox_mid)
         ang_pip_mid = angle_between_vectors(v_prox_mid, v_inter_mid)
         ang_dip_mid = angle_between_vectors(v_inter_mid, v_dist_mid)
 
@@ -210,7 +227,7 @@ class BiomechanicalKinematicRetargeter:
         # Angles for ring finger
         r_sagittal_ring = math.hypot(v_prox_ring[1], v_prox_ring[2])
         ring_yaw = math.atan2(v_prox_ring[0], max(1e-4, r_sagittal_ring)) * 0.70
-        ang_mcp_ring = math.atan2(-v_prox_ring[2], v_prox_ring[1])
+        ang_mcp_ring = calc_mcp_flexion(v_prox_ring)
         ang_pip_ring = angle_between_vectors(v_prox_ring, v_inter_ring)
         ang_dip_ring = angle_between_vectors(v_inter_ring, v_dist_ring)
         ring_mcp = ang_mcp_ring * 1.75
@@ -220,7 +237,7 @@ class BiomechanicalKinematicRetargeter:
         # Angles for pinky finger
         r_sagittal_pky = math.hypot(v_prox_pky[1], v_prox_pky[2])
         pky_yaw = math.atan2(v_prox_pky[0], max(1e-4, r_sagittal_pky)) * 0.70
-        ang_mcp_pky = math.atan2(-v_prox_pky[2], v_prox_pky[1])
+        ang_mcp_pky = calc_mcp_flexion(v_prox_pky)
         ang_pip_pky = angle_between_vectors(v_prox_pky, v_inter_pky)
         ang_dip_pky = angle_between_vectors(v_inter_pky, v_dist_pky)
         pky_mcp = ang_mcp_pky * 1.75

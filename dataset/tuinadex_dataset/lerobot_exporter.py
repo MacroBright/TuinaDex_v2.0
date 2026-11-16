@@ -34,20 +34,119 @@ class LeRobotDatasetWriter:
         self.output_root = Path(repo_id).resolve()
         self._dataset = None
         self._phase_index: dict[str, int] = {}
+        self._active_cameras: list[str] = []
+
+    def _detect_active_cameras(self, first_frame: Any) -> list[str]:
+        """Detect which cameras actually contain non-empty JPEG payloads in the recorded buffer.
+
+        If camera_names was configured, preserve that preferred ordering.
+        Include any active cameras present in first_frame.images_jpeg.
+        """
+        candidates: list[str] = []
+        if hasattr(self.config, "camera_names") and self.config.camera_names:
+            for cam in self.config.camera_names:
+                if cam not in candidates:
+                    candidates.append(cam)
+        if hasattr(first_frame, "images_jpeg") and isinstance(first_frame.images_jpeg, dict):
+            for cam in first_frame.images_jpeg.keys():
+                if cam not in candidates:
+                    candidates.append(cam)
+
+        active: list[str] = []
+        for cam in candidates:
+            if hasattr(first_frame, "images_jpeg") and cam in first_frame.images_jpeg:
+                payload = first_frame.images_jpeg[cam]
+                if payload is not None and len(payload) > 0:
+                    active.append(cam)
+        return active
 
     def _init_dataset_if_needed(self, first_frame: Any) -> Any:
         """Create a dataset from the first frame without fabricating images."""
+        import re
+        import shutil
         from lerobot.datasets.lerobot_dataset import LeRobotDataset
+
+        self._active_cameras = self._detect_active_cameras(first_frame)
+        logger.info(
+            "Detected %d active camera(s) for export: %s",
+            len(self._active_cameras),
+            self._active_cameras,
+        )
 
         info_path = self.output_root / "meta" / "info.json"
         if info_path.exists():
-            return LeRobotDataset(self.output_root.name, root=self.output_root)
+            try:
+                meta = json.loads(info_path.read_text(encoding="utf-8"))
+                existing_cams = [
+                    k.replace("observation.images.", "")
+                    for k in meta.get("features", {}).keys()
+                    if k.startswith("observation.images.")
+                ]
+                total_episodes = int(meta.get("total_episodes", 0))
+            except Exception as e:
+                logger.warning("Failed to parse existing %s: %s", info_path, e)
+                existing_cams = []
+                total_episodes = 0
+
+            if sorted(existing_cams) == sorted(self._active_cameras):
+                logger.info(
+                    "Loading existing dataset at %s with matching cameras: %s",
+                    self.output_root,
+                    existing_cams,
+                )
+                return LeRobotDataset(self.output_root.name, root=self.output_root)
+
+            # Camera schema mismatch
+            if total_episodes == 0:
+                logger.info(
+                    "Existing dataset at %s has 0 episodes but mismatched camera schema (%s vs %s). Recreating.",
+                    self.output_root,
+                    existing_cams,
+                    self._active_cameras,
+                )
+                shutil.rmtree(self.output_root)
+            else:
+                # Route to separate camera-count directory to preserve existing dataset
+                suffix = f"_{len(self._active_cameras)}cam" if self._active_cameras else "_nocam"
+                cur_name = self.output_root.name
+                base_name = re.sub(r"_\d+cam$", "", cur_name)
+                routed_name = f"{base_name}{suffix}"
+                routed_root = self.output_root.parent / routed_name
+                logger.warning(
+                    "Schema mismatch at %s: existing dataset has %d cameras (%s) with %d episodes, "
+                    "but incoming episode has %d cameras (%s). Auto-routing to %s to prevent feature mismatch.",
+                    self.output_root,
+                    len(existing_cams),
+                    existing_cams,
+                    total_episodes,
+                    len(self._active_cameras),
+                    self._active_cameras,
+                    routed_root,
+                )
+                self.output_root = routed_root
+                routed_info = self.output_root / "meta" / "info.json"
+                if routed_info.exists():
+                    try:
+                        routed_meta = json.loads(routed_info.read_text(encoding="utf-8"))
+                        routed_cams = [
+                            k.replace("observation.images.", "")
+                            for k in routed_meta.get("features", {}).keys()
+                            if k.startswith("observation.images.")
+                        ]
+                        if sorted(routed_cams) == sorted(self._active_cameras):
+                            return LeRobotDataset(self.output_root.name, root=self.output_root)
+                    except Exception:
+                        pass
+                    shutil.rmtree(self.output_root)
 
         # LeRobotDatasetMetadata.create invokes root.mkdir(exist_ok=False).
         # If output_root already exists without info.json (e.g. empty or only partial meta),
         # clean it up so create() does not fail with FileExistsError.
-        if self.output_root.exists() and not info_path.exists():
-            import shutil
+        if self.output_root.exists() and not (self.output_root / "meta" / "info.json").exists():
+            logger.warning(
+                "Cleaning pre-existing incomplete dataset directory %s to avoid LeRobot FileExistsError",
+                self.output_root,
+            )
             shutil.rmtree(self.output_root)
 
         dim = int(self.config.action_dim)
@@ -80,13 +179,8 @@ class LeRobotDatasetWriter:
             },
         }
 
-        for camera in self.config.camera_names:
+        for camera in self._active_cameras:
             key = f"observation.images.{camera}"
-            if camera not in first_frame.images_jpeg:
-                raise ValueError(
-                    f"camera '{camera}' missing from first frame; "
-                    "refusing to fabricate a shape"
-                )
             height, width = first_frame.decode_image(camera).shape[:2]
             features[key] = {
                 "dtype": "video" if self.use_videos else "image",
@@ -95,17 +189,11 @@ class LeRobotDatasetWriter:
             }
 
         logger.info(
-            "Creating LeRobotDataset v3.0 at %s (videos=%s)",
+            "Creating LeRobotDataset v3.0 at %s (cameras=%s, videos=%s)",
             self.output_root,
+            self._active_cameras,
             self.use_videos,
         )
-        if self.output_root.exists() and not info_path.exists():
-            import shutil
-            logger.warning(
-                "Cleaning pre-existing incomplete dataset directory %s to avoid LeRobot FileExistsError",
-                self.output_root,
-            )
-            shutil.rmtree(self.output_root)
 
         return LeRobotDataset.create(
             repo_id=self.output_root.name,
@@ -188,6 +276,11 @@ class LeRobotDatasetWriter:
         env["PYTHONPATH"] = ":".join(extra_paths) + (f":{current_pp}" if current_pp else "")
 
         try:
+            active_cams = (
+                getattr(self, "_active_cameras", None)
+                or (self._detect_active_cameras(next(buffer.iter_frames())) if len(buffer) > 0 else [])
+                or list(self.config.camera_names)
+            )
             cmd = [
                 str(conda_py),
                 "-m",
@@ -203,7 +296,7 @@ class LeRobotDatasetWriter:
                 "--mode",
                 str(getattr(self.config, "mode", "arm_hand")),
                 "--cameras",
-                ",".join(self.config.camera_names),
+                ",".join(active_cams),
             ]
             res = subprocess.run(cmd, env=env, cwd=str(repo_root), capture_output=True, text=True)
             if res.returncode != 0:
@@ -231,7 +324,10 @@ class LeRobotDatasetWriter:
         first_frame = next(buffer.iter_frames())
         if self._dataset is None:
             self._dataset = self._init_dataset_if_needed(first_frame)
+        elif not hasattr(self, "_active_cameras") or not self._active_cameras:
+            self._active_cameras = self._detect_active_cameras(first_frame)
 
+        last_valid_decoded: dict[str, np.ndarray] = {}
         for frame in buffer.iter_frames():
             frame_dict: dict[str, Any] = {
                 "observation.state": torch.from_numpy(
@@ -253,13 +349,30 @@ class LeRobotDatasetWriter:
                 "task": str(frame.language_instruction or task),
             }
 
-            for camera in self.config.camera_names:
-                if camera not in frame.images_jpeg:
-                    raise ValueError(
-                        f"camera '{camera}' missing at frame "
-                        f"{frame.frame_index}"
+            for camera in self._active_cameras:
+                if (
+                    hasattr(frame, "images_jpeg")
+                    and camera in frame.images_jpeg
+                    and frame.images_jpeg[camera]
+                ):
+                    image = frame.decode_image(camera)
+                    last_valid_decoded[camera] = image
+                elif camera in last_valid_decoded:
+                    logger.warning(
+                        "Camera '%s' missing at frame %d; reusing previous frame",
+                        camera,
+                        frame.frame_index,
                     )
-                image = frame.decode_image(camera)
+                    image = last_valid_decoded[camera]
+                else:
+                    logger.warning(
+                        "Camera '%s' missing at frame %d without prior frame; creating blank fallback",
+                        camera,
+                        frame.frame_index,
+                    )
+                    image = np.zeros((480, 640, 3), dtype=np.uint8)
+                    last_valid_decoded[camera] = image
+
                 frame_dict[f"observation.images.{camera}"] = (
                     torch.from_numpy(
                         np.transpose(image, (2, 0, 1)).astype(np.uint8)

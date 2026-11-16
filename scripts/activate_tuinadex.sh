@@ -13,13 +13,24 @@ source "${_TD_SCRIPT_DIR}/env/setup_cyclonedds.sh" >/dev/null 2>&1
 
 # Ensure conda function is available in subshells
 if ! declare -f conda >/dev/null 2>&1; then
-    if [[ -f "/home/bright/miniconda3/etc/profile.d/conda.sh" ]]; then
-        # shellcheck source=/dev/null
-        source "/home/bright/miniconda3/etc/profile.d/conda.sh"
-    elif [[ -n "${CONDA_EXE:-}" && -f "${CONDA_EXE%/bin/conda}/etc/profile.d/conda.sh" ]]; then
-        # shellcheck source=/dev/null
-        source "${CONDA_EXE%/bin/conda}/etc/profile.d/conda.sh"
-    fi
+    _conda_sh_candidates=(
+        "${CONDA_EXE%/bin/conda}/etc/profile.d/conda.sh"
+        "${HOME}/miniforge3/etc/profile.d/conda.sh"
+        "${HOME}/miniconda3/etc/profile.d/conda.sh"
+        "${HOME}/anaconda3/etc/profile.d/conda.sh"
+        "${HOME}/mambaforge/etc/profile.d/conda.sh"
+        "/opt/conda/etc/profile.d/conda.sh"
+        "/opt/miniforge3/etc/profile.d/conda.sh"
+        "/home/bright/miniconda3/etc/profile.d/conda.sh"
+    )
+    for _candidate in "${_conda_sh_candidates[@]}"; do
+        if [[ -n "${_candidate}" && -f "${_candidate}" ]]; then
+            # shellcheck source=/dev/null
+            source "${_candidate}"
+            break
+        fi
+    done
+    unset _conda_sh_candidates _candidate
 fi
 
 # 2. Activate Consolidated Conda Environment

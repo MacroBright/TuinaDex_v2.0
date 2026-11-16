@@ -10,16 +10,20 @@
 
 根据《多端异构环境管理规范》，本模块跨越 ROS 2 数据解析与 PyTorch/LeRobot 策略模型两套隔离基座：
 
-### 1. 命令行一键转换 (CLI Usage)
-在准备好 `rosbag2` 录制目录后，执行离线转换：
+### 1. 命令行一键转换与检视 (`tuina data` / CLI)
+在准备好 `rosbag2` 录制目录后，推荐使用系统级命令 **`tuina data`**（自动路由至 `tuinadex-vla` 隔离环境执行，无需手动切换 Conda）或直接运行模块 CLI：
 
 ```bash
 cd /home/bright/win_office/ubantu_files/project/TuinaDex_v2.0
 
-# 激活具身策略环境 (Python 3.10 + CUDA + LeRobot 0.4.4)
-source scripts/activate_tuinadex.sh vla
+# 方式 A (推荐): 系统级 CLI 自动切换 tuinadex-vla 执行转换与数据集体检
+./bin/tuina data convert --bag bags/session_20261102_164500 --out data/tuina_demo --fps 50.0
+./bin/tuina data inspect data/tuina_demo
+./bin/tuina data convert-docker --build    # 可选: 容器化数据转换
+./bin/tuina data vla-cloud --build         # 可选: 拉起云端 GPU VLA 训练/推理容器
 
-# 将指定 rosbag2 目录转换为标准 LeRobotDataset 格式并存入 data/
+# 方式 B: 手动激活具身策略环境后运行原生模块
+source scripts/activate_tuinadex.sh vla
 python3 -m tuinadex_dataset.cli \
   --bag bags/session_20261102_164500 \
   --out data/tuina_demo \
@@ -148,21 +152,15 @@ source /opt/ros/lyrical/setup.bash
 python3 -m pytest tests/test_dataset_adapter.py tests/test_dataset_sync_validator.py -v
 ```
 
-### 阶段 2：在 VLA 策略环境中测试 LeRobot v3.0 数据集生成与三机位视频导出 (7 项通过)
+### 阶段 2：在 VLA 策略环境中测试 LeRobot v3.0 数据集生成与三机位视频导出
 ```bash
-# 激活具身策略环境
-eval "$(~/miniconda3/bin/conda shell.bash hook)"
-conda activate tuinadex-vla
+# 推荐直接通过系统级 CLI 路由至 tuinadex-vla 隔离执行:
+./bin/tuina sys test --suite dataset
 
-# 运行数据校验与 LeRobotDataset v3.0 视频多模态导出单测
+# 或手动激活环境后运行:
+source scripts/activate_tuinadex.sh vla
 pytest tests/test_dataset_sync_validator.py tests/test_lerobot_v3_exporter.py -v
 ```
 
-**预期输出指标**:
-```
-tests/test_dataset_sync_validator.py::test_time_synchronizer PASSED
-tests/test_dataset_sync_validator.py::test_dataset_validator PASSED
-tests/test_lerobot_v3_exporter.py::test_lerobot_v3_multi_modal_export PASSED
-tests/test_lerobot_v3_exporter.py::test_multi_modal_v3_export_with_three_cameras PASSED
-================== 7 passed, 2 skipped, 39 warnings in 7.32s ===================
-```
+> [!NOTE]
+> 执行 `./bin/tuina sys test --suite dataset`（运行 `test_dataset_adapter.py` 与 `test_lerobot_v3_exporter.py`）时，`tuinadex-vla` 环境通过 **3 passed, 2 skipped**（其中 2 项需要 ROS 2 `rosbag2_py` 的用例请按「阶段 1」在 ROS 2 环境中单独验证）。

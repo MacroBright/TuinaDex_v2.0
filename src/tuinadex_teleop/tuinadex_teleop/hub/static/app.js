@@ -3,6 +3,7 @@
 // ============================================================
 
 // 1. DOM 核心元素索引
+const envBadgeEl = document.getElementById('env-badge');
 const stateEl = document.getElementById('state');
 const statsEl = document.getElementById('stats');
 const episodeEl = document.getElementById('episode');
@@ -20,7 +21,10 @@ const osdTotalForceEl = document.getElementById('osd-total-force');
 const primaryViewportEl = document.getElementById('primary-viewport');
 const primaryImgEl = document.getElementById('primary-img');
 const primaryViewNameEl = document.getElementById('primary-view-name');
+const primaryViewTagEl = document.getElementById('primary-view-tag');
 const secondaryStripEl = document.getElementById('secondary-strip');
+const primaryDeviceSelectEl = document.getElementById('primary-device-select');
+const btnRefreshDevicesEl = document.getElementById('btn-refresh-devices');
 
 // 表单输入
 const instructionInput = document.getElementById('instruction');
@@ -110,6 +114,109 @@ const CAMERA_METAS = {
 let primaryCam = '';
 let allCams = [];
 let camerasInitialized = false;
+let detectedDevices = [];
+let cameraBindings = {};
+
+async function fetchDevices() {
+  try {
+    const res = await fetch('/api/devices');
+    if (!res.ok) return;
+    const data = await res.json();
+    detectedDevices = data.devices || [];
+    cameraBindings = data.bindings || {};
+    updatePrimaryDeviceSelect();
+    updateSecondaryDeviceSelects();
+  } catch (err) {
+    console.warn('Failed to fetch devices:', err);
+  }
+}
+
+function updatePrimaryDeviceSelect() {
+  if (!primaryDeviceSelectEl || !primaryCam) return;
+  primaryDeviceSelectEl.innerHTML = '';
+
+  const optNone = document.createElement('option');
+  optNone.value = '';
+  optNone.textContent = '-- 请选择相机硬件 --';
+  primaryDeviceSelectEl.appendChild(optNone);
+
+  const curBound = cameraBindings[primaryCam] || '';
+  detectedDevices.forEach((dev) => {
+    const opt = document.createElement('option');
+    const val = dev.by_path || dev.node;
+    opt.value = val;
+    opt.textContent = dev.label || dev.card_name || dev.node;
+    if (
+      curBound &&
+      (curBound === val ||
+        curBound === dev.node ||
+        curBound === dev.realpath ||
+        curBound === dev.by_path)
+    ) {
+      opt.selected = true;
+    }
+    primaryDeviceSelectEl.appendChild(opt);
+  });
+}
+
+function updateSecondaryDeviceSelects() {
+  document.querySelectorAll('.thumb-device-select').forEach((sel) => {
+    const cam = sel.dataset.cam;
+    if (!cam) return;
+    sel.innerHTML = '';
+    const optNone = document.createElement('option');
+    optNone.value = '';
+    optNone.textContent = '-- 待分配硬件 --';
+    sel.appendChild(optNone);
+
+    const curBound = cameraBindings[cam] || '';
+    detectedDevices.forEach((dev) => {
+      const opt = document.createElement('option');
+      const val = dev.by_path || dev.node;
+      opt.value = val;
+      opt.textContent = dev.card_name || dev.label || dev.node;
+      if (
+        curBound &&
+        (curBound === val ||
+          curBound === dev.node ||
+          curBound === dev.realpath ||
+          curBound === dev.by_path)
+      ) {
+        opt.selected = true;
+      }
+      sel.appendChild(opt);
+    });
+  });
+}
+
+async function bindCamera(camName, devicePath) {
+  if (!camName) return;
+  try {
+    const res = await fetch('/api/cameras/bind', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ camera: camName, device: devicePath }),
+    });
+    const result = await res.json();
+    if (result.ok) {
+      cameraBindings = result.bindings || cameraBindings;
+      const shortDev = devicePath ? devicePath.split('/').pop() : '未绑定';
+      showNotice(`✅ [${camName.toUpperCase()}] 已绑定至 ${shortDev} (已保存)`);
+      updatePrimaryDeviceSelect();
+      updateSecondaryDeviceSelects();
+      if (camName === primaryCam) {
+        primaryImgEl.src = `/video/${camName}?t=${Date.now()}`;
+      } else {
+        const thumbImg = document.querySelector(`figure[data-cam="${camName}"] img`);
+        if (thumbImg) thumbImg.src = `/video/${camName}?t=${Date.now()}`;
+      }
+    } else {
+      showNotice(`❌ 绑定失败: ${result.error || '未知错误'}`);
+    }
+  } catch (err) {
+    showNotice(`❌ 绑定请求出错: ${err}`);
+  }
+}
 
 function formatCamLabel(meta, cam) {
   if (!meta) return cam.toUpperCase();
@@ -130,6 +237,7 @@ function renderCameraLayout() {
   const meta = CAMERA_METAS[primaryCam] || { name: primaryCam.toUpperCase(), fov: '', tag: '' };
   primaryImgEl.src = `/video/${primaryCam}`;
   primaryViewNameEl.textContent = formatCamLabel(meta, primaryCam);
+  updatePrimaryDeviceSelect();
 
   // 渲染副机位缩略图
   secondaryStripEl.innerHTML = '';
@@ -142,15 +250,57 @@ function renderCameraLayout() {
     fig.title = `点击设为主视角 (Tab)`;
     fig.innerHTML = `
       <img src="/video/${cam}" alt="${cMeta.name}"/>
-      <figcaption>
-        <span>${cam.toUpperCase()}</span>
-        <strong>${formatCamThumbTag(cMeta)}</strong>
+      
+      <!-- 顶栏控件层：置于最顶层 (z-index: 20)，设备选择与主视角切换按键 -->
+      <div class="thumb-ctrl-bar">
+        <div class="thumb-badge-group">
+          <span class="thumb-cam-name">${cam.toUpperCase()}</span>
+          <select class="thumb-device-select" data-cam="${cam}" title="绑定 ${cam.toUpperCase()} 硬件" aria-label="选择 ${cam.toUpperCase()} 相机硬件">
+            <option value="">待分配硬件...</option>
+          </select>
+        </div>
+        <button type="button" class="thumb-btn-swap" title="将 ${cam.toUpperCase()} 设为主视角" data-cam="${cam}">
+          ⛶ 设为主视角
+        </button>
+      </div>
+
+      <!-- 底栏描述信息层 (z-index: 10) -->
+      <figcaption class="thumb-info-bar">
+        <span class="thumb-tag">${formatCamThumbTag(cMeta)}</span>
       </figcaption>
-      <div class="thumb-swap-overlay">设为主视角</div>
+
+      <!-- 居中视觉提示遮罩 (z-index: 2, pointer-events: none 绝对禁止拦截点击) -->
+      <div class="thumb-swap-overlay" aria-hidden="true">
+        <span>点击画面设为主视角</span>
+      </div>
     `;
+
+    // 绑定下拉选择事件 (阻止冒泡，避免触发 card 切换主视)
+    const sel = fig.querySelector('.thumb-device-select');
+    if (sel) {
+      sel.addEventListener('click', (e) => e.stopPropagation());
+      sel.addEventListener('mousedown', (e) => e.stopPropagation());
+      sel.addEventListener('change', (e) => {
+        e.stopPropagation();
+        bindCamera(cam, e.target.value);
+      });
+    }
+
+    // 绑定显式切换按键 (阻止冒泡并触发切换主视)
+    const swapBtn = fig.querySelector('.thumb-btn-swap');
+    if (swapBtn) {
+      swapBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        swapPrimaryCam(cam);
+      });
+      swapBtn.addEventListener('mousedown', (e) => e.stopPropagation());
+    }
+
+    // 点击缩略图画面任意其他区域切换为主视角
     fig.addEventListener('click', () => swapPrimaryCam(cam));
     secondaryStripEl.appendChild(fig);
   });
+  updateSecondaryDeviceSelects();
 }
 
 function syncCamerasFromStatus(status) {
@@ -321,10 +471,10 @@ let timerInterval = null;
 
 function setControlAvailability(state) {
   const allowed = {
-    IDLE: new Set(['start', 'home', 'hand_hold']),
-    RECORDING: new Set(['pause', 'stop', 'hand_hold']),
-    PAUSED: new Set(['resume', 'stop', 'home', 'hand_hold']),
-    REVIEWING: new Set(['save', 'discard', 'home', 'hand_hold']),
+    IDLE: new Set(['start', 'home', 'hand_hold', 'axis_cycle', 'imu_axes_cycle']),
+    RECORDING: new Set(['pause', 'stop', 'hand_hold', 'axis_cycle', 'imu_axes_cycle']),
+    PAUSED: new Set(['resume', 'stop', 'home', 'hand_hold', 'axis_cycle', 'imu_axes_cycle']),
+    REVIEWING: new Set(['save', 'discard', 'home', 'hand_hold', 'axis_cycle', 'imu_axes_cycle']),
     SAVING: new Set(),
   };
   document.querySelectorAll('[data-act]').forEach((button) => {
@@ -352,6 +502,18 @@ function renderStatus(status) {
   const curState = status.state;
   stateEl.textContent = curState;
   stateEl.dataset.state = curState;
+
+  // 运行环境与后端类型 (仿真 MuJoCo vs 物理真机 Real)
+  const envVal = String(status.env || 'sim').toLowerCase();
+  const isReal = envVal === 'real';
+  if (envBadgeEl) {
+    envBadgeEl.textContent = isReal ? '(真机 Real)' : '(仿真 MuJoCo)';
+    envBadgeEl.className = `env-badge ${isReal ? 'env-real' : 'env-sim'}`;
+  }
+  document.title = isReal
+    ? 'TuinaDex 具身智能数据采集工作台 [真机 (Real)] (22-DOF)'
+    : 'TuinaDex 具身智能数据采集工作台 [仿真 (MuJoCo)] (22-DOF)';
+
   episodeEl.textContent = `EP ${String(status.episode_index || 0).padStart(2, '0')}`;
   quotaCountEl.textContent = status.saved || 0;
   sessionSummaryEl.textContent = `已存 ${status.saved || 0} · 丢弃 ${status.discarded || 0}`;
@@ -555,8 +717,8 @@ document.addEventListener('keydown', (event) => {
     return;
   }
 
-  // 6. H 键一键回初始姿态
-  if (key === 'h') {
+  // 6. R / H 键一键回初始姿态
+  if (key === 'h' || key === 'r') {
     event.preventDefault();
     act('home');
     return;
@@ -568,9 +730,48 @@ document.addEventListener('keydown', (event) => {
     act('hand_hold');
     return;
   }
+
+  // 8. A 键轮换位置映射轴向 (PosAxis)
+  if (key === 'a') {
+    event.preventDefault();
+    act('axis_cycle');
+    return;
+  }
+
+  // 9. X 键轮换 IMU 姿态轴向 (IMUAxis)
+  if (key === 'x') {
+    event.preventDefault();
+    act('imu_axes_cycle');
+    return;
+  }
 });
 
+// 8. 硬件相机选择与视角切换事件监听
+if (primaryViewTagEl) {
+  primaryViewTagEl.addEventListener('click', () => {
+    swapPrimaryCam();
+  });
+}
+
+if (primaryDeviceSelectEl) {
+  primaryDeviceSelectEl.addEventListener('change', (e) => {
+    bindCamera(primaryCam, e.target.value);
+  });
+}
+
+if (btnRefreshDevicesEl) {
+  btnRefreshDevicesEl.addEventListener('click', async (e) => {
+    e.stopPropagation();
+    btnRefreshDevicesEl.classList.add('is-spinning');
+    await fetchDevices();
+    setTimeout(() => btnRefreshDevicesEl.classList.remove('is-spinning'), 500);
+    showNotice('🔄 摄像头硬件列表已刷新');
+  });
+}
+
 // 9. 连接建立与 SSE 实时事件流
+fetchDevices();
+
 fetch('/api/status')
   .then((response) => response.json())
   .then(renderStatus)

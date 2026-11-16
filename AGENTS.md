@@ -239,13 +239,142 @@ TuinaDex 是面向中医推拿/理疗场景构建的高性能具身智能机器�
 
 | 验证目标 | 推荐执行命令 | 预期指标 |
 | :--- | :--- | :--- |
-| **全环境与依赖准入检查** | `bash scripts/verify_all_envs.sh` | 10 项全 PASSED，诊断报告全 OK |
-| **ROS2 8包完整构建** | `source /opt/ros/lyrical/setup.bash && colcon build --symlink-install` | 8 packages finished, 0 failed |
-| **遥操与运动学核心单测** | `pytest tests/teleop/ -q` | 81 passed |
-| **数据采集 Hub 与 API 单测** | `pytest tests/test_camera_rig.py tests/test_episode_buffer.py tests/test_data_channel.py tests/test_data_hub_controller.py tests/test_collection_hub_api.py -q` | 30 passed |
-| **LeRobot v3.0 数据导出单测** | `pytest tests/test_dataset_adapter.py tests/test_lerobot_v3_exporter.py -q` | 2 passed |
-| **ROS2 节点集成测试** | `python3 -m pytest tests/test_leap_hand_node_integration.py tests/test_arm_node_integration.py tests/test_sim_node_integration.py -q` | 13 passed |
-| **22D 臂手联合控制双模回环** | `bash scripts/e2e_unified_robot_check.sh` | ALL PASS |
-| **三机位采集 Hub 端到端 E2E** | `bash scripts/e2e_hub_collection_check.sh` | PASS (真实 EGL + H.264) |
-| **整机统一启动入口** | `ros2 launch tuinadex_bringup robot.launch.py mode:=arm_hand use_sim:=true mock:=false` | 节点拓扑正常，/hand 与 /arm 话题正常发布 |
-| **数据采集 Web Hub 入口** | `python scripts/collect_teleop_data.py --env sim --mode arm_hand --hub --cameras overhead,wrist,side` | Web Hub 服务就绪于 8080 端口 |
+| **系统级 CLI 解析与安全门禁** | `./bin/tuina sys test --suite cli` | **37 passed** |
+| **全环境与依赖准入检查** | `./bin/tuina sys verify` *(或 `bash scripts/verify_all_envs.sh`)* | **10 项全 PASSED** |
+| **核心安全与限位算法单测** | `./bin/tuina sys test --suite core` | **23 passed** |
+| **遥操运动学与感知核心单测** | `./bin/tuina sys test --suite teleop` | **107 passed** |
+| **数据采集 Hub 与 API 单测** | `./bin/tuina sys test --suite hub` | **34 passed** |
+| **驱动、真实相机与标定扩展单测** | `source scripts/activate_tuinadex.sh control && pytest tests/test_real_camera_rig.py tests/test_env_management.py tests/test_leap_cli_and_pose_manager.py tests/test_leap_teleop_cli.py tests/test_leap_driver.py tests/test_arm_driver.py tests/test_sim_bridge.py tests/test_sim_core.py -q` | **53 passed** |
+| **LeRobot v3.0 数据流式导出单测** | `./bin/tuina sys test --suite dataset` | `3 passed, 2 skipped` *(vla 环境跳过 rosbag2 用例)* |
+| **ROS 2 节点与启动集成测试** | `ROS_DOMAIN_ID=177 ./bin/tuina sys test --suite ros2` | **8 passed** *(CycloneDDS 隔离域)* |
+| **复合仿真节点集成测试** | `python3 -m pytest tests/test_teleop_sim_composite_node.py -q` | **7 passed** |
+| **22D 臂手联合控制双模回环** | `./bin/tuina sys e2e --suite unified` *(或 `bash scripts/e2e_unified_robot_check.sh`)* | ALL PASS |
+| **三机位采集 Hub 端到端 E2E** | `./bin/tuina collect check` *(或 `bash scripts/e2e_hub_collection_check.sh`)* | PASS (真实 EGL + H.264) |
+| **整机统一启动入口** | `./bin/tuina launch --sim` *(或 `ros2 launch tuinadex_bringup robot.launch.py mode:=arm_hand use_sim:=true mock:=false`)* | 节点拓扑正常，/hand 与 /arm 话题正常发布 |
+| **数据采集 Web Hub 入口** | `./bin/tuina collect hub --env sim --mode arm_hand` | Web Hub 服务就绪于 8080 端口 |
+
+---
+
+## 9. 多端异构主机与边缘端 (Linux x86_64 / 香橙派 Orange Pi aarch64) 克隆、自愈与运行规范
+
+当其他 AI Agent 或开发者在任意 Linux 环境（如标准开发机 x86_64、香橙派 Orange Pi AI Pro / Orange Pi 5 等 aarch64 边缘单板计算机，或无硬件 CI 机器）克隆本代码库后，**强制执行以下自愈与运行 SOP，杜绝盲目调试与环境污染**：
+
+### 9.1 第一动作：自感知与环境探针 (First-Contact Probe Protocol)
+克隆仓库后，严禁未经检测直接修改代码或运行驱动。第一步必须执行环境探针：
+```bash
+git clone https://github.com/MacroBright/TuinaDex_v2.0.git
+cd TuinaDex_v2.0
+
+# 运行系统级环境与硬件探针
+./bin/tuina sys env
+# 或
+bash scripts/env/check_env.sh
+```
+探针将输出：
+- **CPU 架构**：`x86_64`（PC/工作站）或 `aarch64`（香橙派/ARM SBC）；
+- **ROS 2 发行版与 CLI 状态**：`lyrical`, `humble`, `jazzy`；
+- **Conda / Python 虚拟环境状态**：`tuinadex-control` 与 `tuinadex-vla` 路径；
+- **物理硬件总线**：串口设备 `/dev/ttyUSB*`、Udev 别名 `/dev/tuinadex_hand`、SocketCAN `can0` 状态、IMU 别名 `/dev/myimu`。
+
+### 9.2 跨架构双基座环境就绪指南 (Dual Conda/Venv Setup by Arch)
+根据探针识别的 CPU 架构选择对应配置路径：
+
+#### 路径 A: 标准 Linux x86_64 开发机 / 服务器
+1. **安装 Conda 控制与策略环境**:
+   ```bash
+   # 控制与驱动基座 (Python 3.10)
+   conda env create -f scripts/env/tuinadex-control.yml
+   # 具身策略学习基座 (Python 3.10 + CUDA + LeRobot)
+   conda env create -f scripts/env/tuinadex-vla.yml
+   ```
+2. **初始化开发机权限与 DDS**:
+   ```bash
+   # 安装 Udev 规则 (U2D2 / USB2CAN 免 root) 与 CycloneDDS
+   sudo bash scripts/env/init_dev_pc.sh --install-rules
+   # 确保当前用户在 dialout 组
+   sudo usermod -aG dialout $USER
+   ```
+
+#### 路径 B: 香橙派 / ARM64 边缘单板计算端 (Orange Pi AI Pro 20T / Orange Pi 5 aarch64)
+> [!IMPORTANT]
+> aarch64 环境下**严禁**直接通过 `tuinadex-control.yml` 导入（包含 `linux-64` 特定二进制），必须采用原生 aarch64 Miniforge 构建：
+1. **轻量化 Conda 环境构建**:
+   ```bash
+   # 推荐安装 aarch64 Miniforge3
+   conda create -n tuinadex-control python=3.10 -y
+   conda activate tuinadex-control
+   
+   # 安装核心运行时依赖
+   pip install numpy scipy pyyaml opencv-python pinocchio dynamixel-sdk pyserial can-utils pytest
+   ```
+2. **香橙派一键硬件初始化 (SocketCAN + Udev + CycloneDDS)**:
+   ```bash
+   # 自动安装 1Mbps SocketCAN 开机自启服务与硬件别名
+   sudo bash scripts/env/init_orangepi.sh --install-all
+   ```
+   该脚本会自动配置 `/etc/systemd/system/tuinadex-can.service`，开机自启 1Mbps `can0`，并建立 `/dev/tuinadex_hand` 与 `/dev/myimu` 软链。
+
+### 9.3 工作区编译构建 (Workspace Build)
+无论在哪种架构上，均通过系统级 CLI 编译 ROS 2 工作空间，无需手动纠结环境变量与动态库冲突：
+```bash
+./bin/tuina sys build
+# 等价于: source /opt/ros/${ROS_DISTRO}/setup.bash && colcon build --symlink-install
+```
+
+### 9.4 跨主机运行三模态自愈指南 (Three Operational Modes)
+根据当前主机连接的硬件状态，Agent 必须自动选择适配的运行模态：
+
+#### 模态 1: 无硬件纯软件仿真孪生 (Zero-Hardware Twin Mode · 开发机与远程体验)
+*适用场景：无任何机械臂/灵巧手/相机外设，需在 MuJoCo 孪生中进行推拿动作验证与算法联调。*
+```bash
+# 1. 启动 22-DOF MuJoCo 仿真物理孪生
+./bin/tuina launch --sim --gui
+
+# 2. 启动 22-DOF 视-惯遥控 HUD 界面 (使用虚拟手势与键盘热键)
+./bin/tuina teleop sim --mock
+
+# 3. 启动多机位 Web UI 采集工作台
+./bin/tuina collect hub --env sim --mode arm_hand
+# 浏览器访问: http://127.0.0.1:8080
+```
+
+#### 模态 2: 边缘端真实机器人 (Edge Physical Mode · 香橙派/物理主机连真实硬件)
+*适用场景：香橙派或工控机外接 U2D2 + USB2CAN + USB 相机阵列，执行真机推拿与示教采集。*
+```bash
+# 1. 确认 SocketCAN 1Mbps 接口就绪
+./bin/tuina arm can up --channel can0 --bitrate 1000000
+
+# 2. 运行真机准备姿态示教与回位
+./bin/tuina arm teach --channel can0
+./bin/tuina arm goto-ready --channel can0
+
+# 3. 运行多设备综合标定向导 (包含桌面、IMU 与灵巧手)
+./bin/tuina calibrate all
+
+# 4. 启动真机协同控制节点
+./bin/tuina launch --real
+
+# 5. 启动真机多机位采集 Web Hub
+./bin/tuina collect hub --env real --mode arm_hand --cameras overhead,side
+# 局域网内任意 PC 打开浏览器访问: http://<orangepi-ip>:8080 即可远程监控并录制试次
+```
+
+#### 模态 3: 无外设快速 Mock 验证 (CI / Headless Mode)
+*适用场景：CI 自动化构建流水线、无 GPU 无显示器远程服务器、快速端到端冒烟自检。*
+```bash
+# 1. 启动轻量化 Mock 节点 (无需物理电机与总线)
+./bin/tuina launch --mock
+
+# 2. 执行端到端双模回环全量自检
+./bin/tuina sys e2e --suite unified
+```
+
+### 9.5 常见故障排查自愈矩阵 (Agent Self-Healing Matrix)
+
+| 故障现象 | 根本诱因 (Root Cause) | Agent 自愈排障 SOP |
+| :--- | :--- | :--- |
+| **`can0: interface not active`** | 未接入 USB2CAN 或 SocketCAN 接口未拉起 | 1. 真实硬件：运行 `./bin/tuina arm can up` 或 `sudo systemctl restart tuinadex-can.service`；<br>2. 无硬件模拟：运行 `./bin/tuina arm can vcan` 自动载入虚拟总线 `vcan0`。 |
+| **`Permission denied: /dev/ttyUSB*`** | 当前用户不在 `dialout` 组或缺少 Udev 规则 | 运行 `sudo usermod -aG dialout $USER && sudo bash scripts/env/init_dev_pc.sh --install-rules`，重新登录生效。 |
+| **香橙派 Headless 无显示器报错** | OpenCV / OpenGL 尝试在无 X11/Wayland 桌面创建窗口 | 1. 在遥操启动命令中加入 `--no-gui` 或脱机使用 Web Hub 采集；<br>2. 导出 EGL 离屏渲染环境变量：`export MUJOCO_GL=egl`。 |
+| **ROS 2 话题跨主机无法发现** | DDS 域 ID 不一致或多网卡广播隔离 | 1. 确保所有主机 `echo $ROS_DOMAIN_ID` 均为 `42`；<br>2. 确认 `RMW_IMPLEMENTATION=rmw_cyclonedds_cpp` 且 CycloneDDS XML 生效。 |
+| **Conda 环境激活找不到 `conda` 函数** | 子 Shell 中未预加载 Conda 初始化脚本 | 运行 `source scripts/activate_tuinadex.sh control`（内部已适配 miniforge/miniconda 全局候选路径）。 |

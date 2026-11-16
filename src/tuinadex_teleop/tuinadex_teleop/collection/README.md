@@ -31,7 +31,10 @@ source scripts/activate_tuinadex.sh control
 适合**实时观察 3 机位视频墙、监视 22 维关节曲线与接触力柱状图、交互式示教录制推拿轨迹**：
 
 ```bash
-# 启动 22 维手-臂协同仿真与 Web UI Hub (默认绑定 127.0.0.1:8080)
+# 方式 1 (推荐): 通过系统 CLI 启动 22 维手-臂协同仿真与 Web UI Hub (默认绑定 127.0.0.1:8080)
+./bin/tuina collect hub --env sim --mode arm_hand --cameras overhead,wrist,side --fps 50 --repo-id data/tuina_hub_dataset
+
+# 方式 2: 直接调用采集脚本
 python scripts/collect_teleop_data.py \
     --env sim \
     --mode arm_hand \
@@ -46,12 +49,12 @@ python scripts/collect_teleop_data.py \
 👉 **`http://127.0.0.1:8080`**
 
 #### 浏览器工作台操作指引：
-1. **任务配置**: 在顶部输入当前推拿手法与穴位（例如语言指令：`按压大椎穴`，阶段标签：`approach` / `press` / `hold` / `release`）；
-2. **开始示教**: 点击 **Start Recording**（快捷键 **`[空格]`**），系统状态切换至 `RECORDING`，开始以 50Hz 严格时间网格记录 3 机位画面与 22 维运动学/动力学数据；
-3. **结束试次**: 推拿动作完成后点击 **Stop Recording**（快捷键 **`[S]`**），状态进入 `REVIEWING` 评审确认；
-4. **决策保存/舍弃**: 
-   - 示教满意：点击 **Save Episode**（快捷键 **`[回车]`**），后台异步线程自动将其分块写入 LeRobotDataset v3.0；
-   - 示教失误：点击 **Discard**（快捷键 **`[退格]`**），清空缓冲区直接进入下一试次。
+1. **任务配置**: 在顶栏输入当前推拿手法指令（默认 `按揉大椎穴`）与阶段（快捷按键 `1`~`4` 切换：`approach` / `press` / `knead` / `retract`）；
+2. **开始 / 停止示教**: 点击 **开始录制** 或按 **`[Space]`** 开始 50Hz 严格同步录制；推拿动作完成后再次按 **`[Space]`** 或点击 **停止** 进入评审；
+3. **决策保存 / 丢弃**:
+   - 示教满意：点击 **保存试次**（快捷键 **`[S]`**），后台异步线程自动将其分块写入 LeRobotDataset v3.0；
+   - 示教失误：点击 **丢弃**（快捷键 **`[D]`**），清空缓冲区直接进入下一试次；
+4. **真机辅助控制**: 可随时按 **`[L]`** 锁定/解除灵巧手当前手型（`HAND_HOLD`，与遥操视窗同步），按 **`[H]`** 触发臂手平滑返回准备姿态（`/teleop/home`）。
 
 ---
 
@@ -73,19 +76,25 @@ python scripts/collect_teleop_data.py \
 
 ---
 
-### 4. 方式 C：切换至真实物理机器人采集模式
+### 4. 方式 C：真实物理机器人多机位采集模式 (`--env real`)
 
-当系统切换至真实硬件环境时，无需改动任何上层代码，只需将 `--env` 参数切换为 `real`：
+当系统切换至真实硬件环境时，使用 `RealCameraProducerThread` (`cameras/real_camera_rig.py`) 加载 `configs/real_cameras.yaml`（通过 `/dev/v4l/by-path/...` 稳定绑定物理 USB 端口），并通过双向本地 UDP 桥（`:9876` `TD22` 动作指令、`TS22 :9878` 实测关节角/力矩遥测、`:9877` `HOME`/`HAND_HOLD` 控制回传）与 ROS 2 节点实时同步：
 
 ```bash
-# 接入 ROS 2 话题与真实硬件驱动 (需先启动 robot.launch.py use_sim:=false)
-python scripts/collect_teleop_data.py \
+# 终端 1: 启动 22-DOF 真机视-惯遥操 (或提前以 tuina launch --real 拉起真机驱动)
+./bin/tuina teleop composite --arm-channel can0 --hand-port /dev/ttyUSB0 --no-imu
+
+# 终端 2: 启动真机 Web UI 数据采集 Hub (自带真机硬件安全确认，支持 --camera-map 临时覆写相机设备)
+./bin/tuina collect hub \
     --env real \
     --mode arm_hand \
-    --hub \
-    --cameras overhead,wrist,side \
+    --cameras overhead,side \
+    --max-staleness 0.15 \
     --repo-id data/tuina_real_dataset
 ```
+
+> [!NOTE]
+> 真机模式下 `collect_teleop_data.py` 默认相机陈旧容忍上限 `--max-staleness` 为 `0.15s`（仿真模式为 `0.06s`）；若实体灵巧手暂未配备指尖 FSR，`RealDataChannel` 自动将 `observation.contact_forces` 置零占位以保持 22-DOF 特征字典完全一致。
 
 ---
 
@@ -118,7 +127,8 @@ TuinaDex_v2.0/
 │   │
 │   ├── cameras/                            # 【多相机阵列与渲染管线】
 │   │   ├── camera_specs.py                 # 标准 3 机位光学契约定义 (overhead, wrist, side)
-│   │   └── sim_camera_rig.py               # MuJoCo 离屏渲染器 (SimCameraRig 与独立 CameraProducerThread)
+│   │   ├── sim_camera_rig.py               # MuJoCo 离屏渲染器 (SimCameraRig 与独立 CameraProducerThread)
+│   │   └── real_camera_rig.py              # 真机多 UVC 物理相机并行采集线程 (RealCameraProducerThread)
 │   │
 │   └── hub/                                # 【轻量 Web UI Hub 服务端与前端】
 │       ├── server.py                       # 原生 Python http.server (REST API + SSE 遥测 + MJPEG 视频流)
@@ -148,8 +158,8 @@ TuinaDex_v2.0/
    - 严格区分 **实际物理状态 (State)** 与 **上层示教动作 (Action)**；
    - 包含机械臂 6 维 + 灵巧手 16 维关节角度、22 维关节力矩/电流反馈、4 指（食指、中指、无名指、拇指）指尖法向接触力 (N)。
 3. **仿真/真机双通道对等抽象 (Channel Parity)**:
-   - [`SimDataChannel`](file:///home/bright/win_office/ubantu_files/project/TuinaDex_v2.0/src/tuinadex_teleop/tuinadex_teleop/collection/data_channel.py) 从 MuJoCo 物理引擎与离屏渲染线程读取；
-   - [`RealDataChannel`](file:///home/bright/win_office/ubantu_files/project/TuinaDex_v2.0/src/tuinadex_teleop/tuinadex_teleop/collection/data_channel.py) 从 ROS 2 话题 `/hand/joint_states`、`/arm/joint_states` 与物理相机驱动读取；
+   - [`SimDataChannel`](data_channel.py) 从 MuJoCo 物理引擎与离屏渲染线程读取；
+   - [`RealDataChannel`](data_channel.py) 从 ROS 2 话题 `/hand/joint_states`、`/arm/joint_states` 与物理相机驱动读取；
    - 两者实现完全相同的 `BaseDataChannel` 契约，上层采集状态机与下游 LeRobot 导出器 100% 透明无感。
 4. **轻量零依赖 Web UI Hub**:
    - 彻底规避 Node.js/npm 外部庞大构建工具链，采用 Python 原生多线程 `ThreadingHTTPServer`；
@@ -194,7 +204,9 @@ Web UI Hub 通过 REST API、Server-Sent Events (SSE) 与 MJPEG 视频流三路�
 - `POST /api/action/resume`: 恢复录制；
 - `POST /api/action/save`: 确认保存当前试次；
 - `POST /api/action/discard`: 舍弃当前试次；
-- `POST /api/action/label`: 更新当前推拿任务的 `language_instruction` 与 `phase_label`。
+- `POST /api/action/label`: 更新当前推拿任务的 `language_instruction` 与 `phase_label`；
+- `POST /api/action/home`: 一键触发臂手平滑返回准备姿态 (`/teleop/home` + UDP `:9877 HOME`)；
+- `POST /api/action/hand_hold`: 切换灵巧手当前手型锁定/跟随 (`/teleop/hand_hold` + UDP `:9877 HAND_HOLD`)。
 
 ### 2. 流式传输接口
 - `GET /events/telemetry`: SSE 实时遥测流（25Hz），向前端推送 22D 关节位置、接触力、时间戳及状态变化；
@@ -206,34 +218,32 @@ Web UI Hub 通过 REST API、Server-Sent Events (SSE) 与 MJPEG 视频流三路�
 
 | 按键 | 对应动作 | 行为说明 |
 | :---: | :--- | :--- |
-| **`[空格]`** | **Start / Pause / Resume** | 录制开/关热键 |
-| **`[S]`** | **Stop Recording** | 停止录制并进入试次评审 |
-| **`[回车]`** | **Save Episode** | 确认保存当前轨迹至磁盘 |
-| **`[退格]`** | **Discard Episode** | 舍弃当前试次缓冲 |
-| **`[1] ~ [4]`** | **Phase Shortcut** | 快速切换推拿阶段 (1: approach, 2: press, 3: hold, 4: release) |
+| **`[Space]`** | **Start / Stop Recording** | 开始录制 (`RECORDING`) / 停止并进入评审 (`REVIEWING`) |
+| **`[S]`** | **Save Episode** | 批准保存当前轨迹至磁盘 (`LeRobotDataset v3.0`) |
+| **`[D]`** | **Discard Episode** | 舍弃当前试次缓冲并重置为准备状态 |
+| **`[H]`** | **Return to Ready** | 一键驱动臂手平滑返回准备姿态 |
+| **`[L]`** | **Hand Hold / Follow** | 锁定/解锁 16-DOF 灵巧手手势（与遥操视窗 `[L]` 同步） |
+| **`[Tab]`** | **Swap Camera View** | 在主副视窗缩略栏之间交换主视角机位 |
+| **`[1] ~ [4]`** | **Phase Shortcut** | 快速切换手法阶段 (`1: approach`, `2: press`, `3: knead`, `4: retract`) |
+| **`[F]`** | **Zen Fullscreen** | 切换全屏禅道监视模式 |
 
 ---
 
 ## 单元测试与验证命令
 
-数据采集层具备完备的单元测试矩阵，全部通过 pytest 运行：
+数据采集层具备完备的单元测试矩阵，全部通过 pytest 或 `tuina sys test` 运行：
 
 ```bash
-# 激活环境
+# 1. 运行 Hub、通道抽象、状态机与 HTTP API 全套单测 (34 项全过)
+./bin/tuina sys test --suite hub
+
+# 2. 运行真机多 UVC 相机线程采集阵列单测
 source scripts/activate_tuinadex.sh control
+pytest tests/test_real_camera_rig.py -v
 
-# 运行相机阵列、缓冲队列、双通道路由器、控制器与 HTTP API 全套单测 (27 项)
-python -m pytest \
-    tests/test_camera_rig.py \
-    tests/test_episode_buffer.py \
-    tests/test_data_channel.py \
-    tests/test_data_hub_controller.py \
-    tests/test_collection_hub_api.py -v
+# 3. 运行 LeRobotDataset v3.0 多视频流切片与 Parquet 导出测试 (tuinadex-vla 环境)
+./bin/tuina sys test --suite dataset
 
-# 运行 LeRobotDataset v3.0 多视频流切片与 Parquet 导出测试 (需 tuinadex-vla 环境)
-~/win_office/conda/envs/tuinadex-vla/bin/python -m pytest \
-    tests/test_lerobot_v3_exporter.py -v
-
-# 运行全链路端到端集成测试 (启动 Hub -> 渲染 -> 交互 -> 导出 -> Parquet与视频校验)
-bash scripts/e2e_hub_collection_check.sh
+# 4. 运行全链路端到端集成测试 (启动 Hub -> 渲染 -> 交互 -> 导出 -> Parquet与视频校验)
+./bin/tuina collect check
 ```

@@ -422,6 +422,9 @@ def run_stage_1_table(
                     print(f"  {status_str} | 采样中: {prog_bar}", end="\r", flush=True)
                 else:
                     print(f"  {status_str} | 状态平稳，按 [ENTER] 开始采样...", end="\r", flush=True)
+            elif has_id1:
+                elapsed = int(now - t_start)
+                print(f"  [WAIT] 已检测到 ID 1 码，但未检测到 ID 0 主基准码... ({elapsed}s) | 按 [S] 跳过", end="\r", flush=True)
             else:
                 elapsed = int(now - t_start)
                 print(f"  [WAIT] 未检测到 ID 0 码... 请将标定板放于视野内 ({elapsed}s) | 按 [S] 跳过", end="\r", flush=True)
@@ -434,6 +437,9 @@ def run_stage_1_table(
             elif has_id0:
                 status_text = "标定板已锁定! 保持静止，按 [ENTER] 开始采样"
                 status_color = (0, 255, 230)
+            elif has_id1:
+                status_text = "已检测到 ID 1 对角码，缺少 ID 0 主基准码... 请调整标定板位置"
+                status_color = (0, 165, 255)
             else:
                 status_text = "正在搜索 ID 0 码... 请将标定板置于视野内"
                 status_color = (0, 165, 255)
@@ -441,10 +447,14 @@ def run_stage_1_table(
             t_lines = [
                 f"识别状态: ID 0: {'已锁定 (OK)' if has_id0 else '未检测 (SEARCHING)'} | ID 1: {'已锁定 (OK)' if has_id1 else '未检测'}"
             ]
-            if has_id1:
+            if has_id0 and has_id1:
                 t0 = observations[0].t_cam_to_marker[:3, 3]
                 t1 = observations[1].t_cam_to_marker[:3, 3]
                 t_lines.append(f"基线几何校验: 对角线距离 {np.linalg.norm(t1-t0)*100:.1f} cm (符合双码基准)")
+            elif has_id0:
+                t_lines.append("基线几何校验: 建议放置 ID 1 码以提供稳定对角线基线约束")
+            elif has_id1:
+                t_lines.append("基线几何校验: 已检测到 ID 1 对角码，但未检测到 ID 0 主基准码")
             else:
                 t_lines.append("基线几何校验: 建议放置 ID 1 码以提供稳定对角线基线约束")
 

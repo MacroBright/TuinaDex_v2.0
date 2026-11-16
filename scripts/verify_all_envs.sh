@@ -23,10 +23,26 @@ echo -e "${BOLD}${BLUE}======================================================${N
 
 # 1. Run Automated Environment Tests
 echo -e "\n${BOLD}[Step 1/2] Running automated environment test suite...${NC}"
-PY_BIN="${HOME}/win_office/conda/envs/tuinadex-control/bin/python"
-if [ ! -f "${PY_BIN}" ]; then
+PY_BIN=""
+_CANDIDATE_PYS=(
+    "${HOME}/win_office/conda/envs/tuinadex-control/bin/python"
+    "${HOME}/miniforge3/envs/tuinadex-control/bin/python"
+    "${HOME}/miniconda3/envs/tuinadex-control/bin/python"
+    "${HOME}/anaconda3/envs/tuinadex-control/bin/python"
+    "${HOME}/mambaforge/envs/tuinadex-control/bin/python"
+    "/opt/conda/envs/tuinadex-control/bin/python"
+    "/opt/miniforge3/envs/tuinadex-control/bin/python"
+)
+for _cand in "${_CANDIDATE_PYS[@]}"; do
+    if [ -x "${_cand}" ]; then
+        PY_BIN="${_cand}"
+        break
+    fi
+done
+if [ -z "${PY_BIN}" ]; then
     PY_BIN="python3"
 fi
+unset _CANDIDATE_PYS _cand
 
 if "${PY_BIN}" -m pytest "${REPO_ROOT}/tests/test_env_management.py" -v; then
     echo -e "${GREEN}[PASS] All environment scripts, rules, and Dockerfiles verified.${NC}"

@@ -30,26 +30,32 @@ source /opt/ros/lyrical/setup.bash
 source install/setup.bash
 ```
 
-### 3. 硬件调试与视觉遥操工具箱 (CLI Tools)
+### 3. 系统级 CLI 与硬件调试工具箱 (`tuina hand` / `leap-*`)
 
-| 工具命令 | 核心定位与功能 | 典型使用命令 |
-| :--- | :--- | :--- |
-| **`leap-control`** | 交互式逐指/手势控制台 (支持相对弧度、手势切换、电流与状态监控) | `leap-control --port /dev/ttyUSB0`<br>*(脱机演示: `leap-control --mock`)* |
-| **`leap-calibrate`** | 硬件零点 (0 rad 全开位) 校准与推拿手法姿态录制 | `leap-calibrate --action 1`<br>*(脱机演示: `leap-calibrate --mock`)* |
-| **`leap-diagnose`** | 16 舵机物理限位扫描体检与 $2\pi$ 回绕解算 | `leap-diagnose --port /dev/ttyUSB0`<br>*(脱机演示: `leap-diagnose --mock`)* |
-| **`leap-teleop`** | 实时视觉手势遥操终端 (复用底层驱动 + 仿真验证关键点检测与重定向，带 OpenCV HUD) | `leap-teleop --port /dev/ttyUSB0`<br>*(脱机演示: `leap-teleop --mock --mock-camera`)* |
+所有灵巧手工具既可通过全局 **`tuina hand` / `tuina teleop hand` / `tuina calibrate`** 调用（自动注入隔离环境与硬件前置安全自检），也可在激活 `tuinadex-control` 后直接使用原生 `leap-*` 兼容命令：
+
+| 系统 `tuina` 命令 | 原生兼容命令 | 核心定位与功能 | 典型使用命令 |
+| :--- | :--- | :--- | :--- |
+| **`tuina hand control`** | `leap-control` | 交互式逐指/手势控制台 (相对弧度、预设切换、电流监控) | `tuina hand control --port /dev/ttyUSB0`<br>*(脱机演示: `tuina hand control --mock`)* |
+| **`tuina calibrate hand`** / **`tuina hand calibrate`** | `leap-calibrate` | 硬件零点 (0 rad 全开位) 校准与推拿手法姿态录制 | `tuina hand calibrate --action 1`<br>*(脱机演示: `tuina hand calibrate --mock`)* |
+| **`tuina calibrate hand-limits`** / **`tuina hand diagnose`** | `leap-diagnose` | 16 舵机物理限位扫描体检与 $2\pi$ 回绕解算 | `tuina hand diagnose --port /dev/ttyUSB0`<br>*(脱机演示: `tuina hand diagnose --mock`)* |
+| **`tuina teleop hand`** / **`tuina hand teleop`** | `leap-teleop` | 实时视觉手势遥操终端（支持 `direct` 4Mbps 直连与 `ros2` 节点双后端） | `tuina teleop hand --port /dev/ttyUSB0 --camera-id 4`<br>*(脱机演示: `tuina teleop hand --mock`)* |
 
 > [!TIP]
-> 以上四项调试命令在 `tuinadex-control` Conda 环境激活后可直接在终端中调用；在 ROS 2 环境中亦可使用 `ros2 run tuinadex_hand <command>` 调用。
+> 直接调用 `leap-*` 须先运行 `source scripts/activate_tuinadex.sh control`；在任何目录下调用 `tuina hand ...` 或 `./bin/tuina teleop hand ...` 均会自动隔离运行环境并在真机执行前检查 `/dev/ttyUSB0` 与 `/dev/myimu` 是否冲突。
 
-#### A. 实时视觉遥操终端 (`leap-teleop`) 使用示例
+#### A. 实时视觉遥操终端 (`tuina teleop hand` / `leap-teleop`) 使用示例
 ```bash
-# 真实相机 + 真实灵巧手
-leap-teleop --port /dev/ttyUSB0 --camera-id 0
+# 1. 默认超低延迟串口直驱模式 (RealSense RGB camera_id=4 + LEAP Hand 4Mbps 串口)
+./bin/tuina teleop hand --port /dev/ttyUSB0 --camera-id 4
 
-# 脱机全模拟调试 (无硬件与无真实相机)
-leap-teleop --mock --mock-camera
+# 2. ROS 2 节点化后端 (启动 teleop_hand_real.launch.py，解耦发布 /hand/joint_command)
+./bin/tuina teleop hand --backend ros2 --port /dev/ttyUSB0 --camera-id 4
+
+# 3. 脱机全模拟调试 (无物理手与无真实相机，可预览 HUD 仪表盘)
+./bin/tuina teleop hand --mock
 ```
+
 HUD 控制快捷键：
 - `SPACE`: 离合切换（暂停 / 继续向舵机下发手势控制指令）；
 - `L`: 锁定当前手势（保持当前关节姿态）；
@@ -180,7 +186,8 @@ src/tuinadex_hand/
 │   │   ├── __init__.py
 │   │   ├── control.py            # leap-control: 逐指/手势交互控制终端
 │   │   ├── calibrate.py          # leap-calibrate: 零点与推拿姿态录制器
-│   │   └── diagnostics.py        # leap-diagnose: 物理限位扫描体检工具
+│   │   ├── diagnostics.py        # leap-diagnose: 物理限位扫描体检工具
+│   │   └── teleop.py             # leap-teleop: 16-DOF 视觉手势直驱遥操终端与 HUD
 │   ├── core/                     # 核心姿态与运动学算法 (纯 Python，解耦)
 │   │   ├── __init__.py
 │   │   ├── pose_manager.py       # 姿态持久化、有效性校验与 2pi 回绕解算
@@ -209,22 +216,13 @@ src/tuinadex_hand/
 
 ## 5. 单元测试与闭环验证
 
-在本地环境下运行驱动级与节点级集成测试：
+在本地环境下运行驱动级、CLI 与 ROS 2 节点集成测试：
 
 ```bash
-# 隔离 ROS 2 域 ID 并加载环境
-export ROS_DOMAIN_ID=99
-source /opt/ros/lyrical/setup.bash
-source install/setup.bash
+# 1. 运行姿态管理、CLI、视觉直驱遥操与驱动层单测 (tuinadex-control 环境)
+source scripts/activate_tuinadex.sh control
+pytest tests/test_leap_cli_and_pose_manager.py tests/test_leap_teleop_cli.py tests/test_leap_driver.py -v
 
-# 运行 LEAP Hand 驱动、姿态管理与 ROS 2 节点集成测试
-python3 -m pytest tests/test_leap_cli_and_pose_manager.py tests/test_leap_driver.py tests/test_leap_hand_node_integration.py -v
-```
-
-**预期输出指标**:
-```
-tests/test_leap_cli_and_pose_manager.py (9 passed)
-tests/test_leap_driver.py (4 passed)
-tests/test_leap_hand_node_integration.py (1 passed)
-============================== 14 passed in 2.60s ===============================
+# 2. 通过系统 CLI 运行包含 leap_hand_node 的 ROS 2 隔离集成测试
+ROS_DOMAIN_ID=99 ./bin/tuina sys test --suite ros2
 ```

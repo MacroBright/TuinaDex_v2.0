@@ -54,6 +54,7 @@ def test_status_and_control_api(hub):
     status, data = _get_json(f"{base}/api/status")
     assert status == 200
     assert data["state"] == "IDLE"
+    assert data["env"] == "sim"
     assert data["cameras"] == ["overhead", "wrist", "side"]
 
     status, data = _post(f"{base}/api/action/start")
@@ -73,6 +74,12 @@ def test_status_and_control_api(hub):
     controller.tick()
     assert _get_json(f"{base}/api/status")[1]["state"] == "IDLE"
 
+    # Test axis_cycle and imu_axes_cycle actions
+    s_axis, d_axis = _post(f"{base}/api/action/axis_cycle")
+    assert s_axis == 200 and d_axis["ok"] is True
+    s_imu, d_imu = _post(f"{base}/api/action/imu_axes_cycle")
+    assert s_imu == 200 and d_imu["ok"] is True
+
 
 def test_unknown_action_returns_ok_false(hub):
     base, _, _ = hub
@@ -80,14 +87,60 @@ def test_unknown_action_returns_ok_false(hub):
     assert status == 400 and data["ok"] is False
 
 
+def test_api_devices_and_camera_binding(hub):
+    base, _, _ = hub
+    status, data = _get_json(f"{base}/api/devices")
+    assert status == 200
+    assert "devices" in data
+    assert "bindings" in data
+    assert "cameras" in data
+    assert "overhead" in data["cameras"]
+
+    # Valid camera binding
+    status, bind_res = _post(
+        f"{base}/api/cameras/bind",
+        {"camera": "overhead", "device": "/dev/video8"},
+    )
+    assert status == 200
+    assert bind_res["ok"] is True
+    assert bind_res["camera"] == "overhead"
+    assert bind_res["device"] == "/dev/video8"
+
+    # Invalid camera binding
+    status, err_res = _post(
+        f"{base}/api/cameras/bind",
+        {"camera": "non_existent_cam", "device": "/dev/video8"},
+    )
+    assert status == 400
+    assert err_res["ok"] is False
+
+
 def test_index_and_static_assets(hub):
     base, _, _ = hub
     with urllib.request.urlopen(f"{base}/", timeout=5) as response:
         assert response.status == 200
-        assert "TuinaDex" in response.read().decode()
-    for path in ("/app.js", "/style.css"):
-        with urllib.request.urlopen(f"{base}{path}", timeout=5) as response:
-            assert response.status == 200
+        html = response.read().decode()
+        assert "TuinaDex" in html
+        assert "primary-device-picker" in html
+        assert "primary-view-tag" in html
+        assert "PosAxis" in html
+        assert "IMUAxis" in html
+        assert "R / H" in html
+        assert "env-badge" in html
+    with urllib.request.urlopen(f"{base}/app.js", timeout=5) as response:
+        assert response.status == 200
+        js = response.read().decode()
+        assert "primaryViewTagEl" in js
+        assert "thumb-btn-swap" in js
+        assert "thumb-ctrl-bar" in js
+        assert "envBadgeEl" in js
+    with urllib.request.urlopen(f"{base}/style.css", timeout=5) as response:
+        assert response.status == 200
+        css = response.read().decode()
+        assert ".thumb-ctrl-bar" in css
+        assert ".thumb-btn-swap" in css
+        assert "pointer-events: none !important" in css
+        assert ".env-badge" in css
 
 
 def test_mjpeg_stream_yields_jpeg_frames(hub):

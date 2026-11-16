@@ -8,17 +8,28 @@
 
 ## 快速开始 (Quick Start)
 
-### 1. CAN 总线接口配置 (Linux SocketCAN)
-确保硬件 USB2CAN 适配器已接入，并完成 CAN 网络接口初始化：
-```bash
-# 1. 真实硬件 CAN 总线配置 (1 Mbps)
-sudo ip link set can0 up type can bitrate 1000000
-ip -details link show can0
+### 1. CAN 总线接口配置与系统 CLI (`tuina arm`)
+系统已将 `SocketCAN` 初始化、交互式控制台、准备姿态拖动示教与安全平滑运动封装进统一 CLI **`tuina arm`**（均附带 1Mbps 接口预检与急停确认门禁）：
 
-# 2. 或建立虚拟 CAN 接口用于离线调试 (vcan0)
-sudo modprobe vcan
-sudo ip link add dev vcan0 type vcan
-sudo ip link set up vcan0
+```bash
+# 1. 查看或拉起 1 Mbps 物理 SocketCAN 接口 (默认 bitrate=1000000)
+./bin/tuina arm can status --channel can0
+./bin/tuina arm can up --channel can0 --bitrate 1000000
+
+# 2. 启用虚拟 CAN 接口用于离线调试 (vcan0)
+./bin/tuina arm can vcan --channel vcan0
+
+# 3. 无动力拖动示教并标定真机推拿准备姿态 (写入 src/tuinadex_teleop/configs/teleop_real_posture.yaml)
+./bin/tuina arm teach --channel can0
+
+# 4. 平滑五次多项式运动至 ready_pose 实测验证
+./bin/tuina arm goto-ready --channel can0
+
+# 5. 常用单次诊断与关节控制
+./bin/tuina arm status                    # 查看 6 轴实测角度与 MOS 温度
+./bin/tuina arm watch                     # 20Hz 失能监视各轴角度变化 (Ctrl+C 保存快照)
+./bin/tuina arm move -j 1 -a 15.0 --wait  # 单关节安全限速运动到 +15°
+./bin/tuina arm cli                       # 启动 rebot-arm> 交互式控制控制台
 ```
 
 ### 2. 独立编译与环境加载
@@ -97,12 +108,15 @@ python3 scripts/mock_command_publisher.py --mode arm --arm-position 0.2 --durati
 | `control_rate_hz` | `double` | `50.0` | Hz | ROS 2 控制回路与状态发布频率 |
 | `watchdog_timeout_sec` | `double` | `0.30` | s | **指令失联安全超时门限** (300ms) |
 | `watchdog_hold_sec` | `double` | `0.30` | s | 超时后原位保持缓冲时间 (0.3s) |
-| `watchdog_ramp_sec` | `double` | `0.60` | s | 超时后平滑阻尼回零过渡时间 (0.6s) |
+| `watchdog_ramp_sec` | `double` | `0.60` *(节点默认 `2.50`)* | s | 超时后平滑阻尼回零过渡时间（真机节点默认 2.50s 柔顺回归，可在 YAML 覆盖） |
 | `default_speed_deg_s` | `double` | `30.0` | deg/s | 默认轨迹运动角速度限制 |
 | `temp_alarm_c` | `double` | `110.0` | °C | 电机线圈高温告警阈值 |
 | `temp_return_zero_c` | `double` | `125.0` | °C | 电机超温降级强制平滑回零阈值 |
 | `temp_disconnect_c` | `double` | `140.0` | °C | **电机危险超温下电硬熔断阈值** |
 | `mock_mode` | `bool` | `false` | - | 是否启用内部软件 Mock 仿真驱动 |
+
+> [!NOTE]
+> 真机驱动 `ArmDriver` 针对悬臂重力工况已将 RobStride 电机 MIT 阻尼增益调谐为 J1(`kp=30, kd=2`), J2-J3(`kp=45, kd=3.5`), J4/J6(`kp=25, kd=1`), J5(`kp=28, kd=2`)，抑制电磁共振；节点退出时安全失能断开连接（如需主动归零，在退出前使用 `/arm/safe_home` 服务或由上层遥操两阶段安全退出流程驱动）。
 
 ---
 
@@ -154,22 +168,11 @@ src/tuinadex_arm/
 
 ## 5. 单元测试与闭环验证
 
-在本地环境下运行驱动级与节点级集成测试：
-
 ```bash
-# 隔离 ROS 2 域 ID 并加载环境
-export ROS_DOMAIN_ID=99
-source /opt/ros/lyrical/setup.bash
+# 1. 运行机械臂驱动层限位与看门狗单测 (tuinadex-control 环境)
+source scripts/activate_tuinadex.sh control
+pytest tests/test_arm_driver.py -v
 
-# 运行机械臂驱动与节点集成单测
-python3 -m pytest tests/test_arm_driver.py tests/test_arm_node_integration.py -v
-```
-
-**预期输出指标**:
-```
-tests/test_arm_driver.py::test_arm_driver_init_mock PASSED
-tests/test_arm_driver.py::test_arm_driver_limits_clamp PASSED
-tests/test_arm_driver.py::test_arm_driver_relax_to_open PASSED
-tests/test_arm_node_integration.py::test_arm_mock_loop_and_watchdog PASSED
-============================== 4 passed in 2.30s ===============================
+# 2. 通过系统 CLI 运行包含 arm_node 的 ROS 2 隔离集成测试
+ROS_DOMAIN_ID=99 ./bin/tuina sys test --suite ros2
 ```

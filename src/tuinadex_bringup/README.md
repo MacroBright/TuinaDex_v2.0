@@ -11,16 +11,20 @@
 ## 快速开始 (Quick Start)
 
 ### 1. 方式 A：使用 TuinaDex 统一 CLI 控制台 (推荐 · 免配置)
-`bin/tuina` 具备自动环境感知能力，会自动定位 `tuinadex-control` Conda 环境、配置 CycloneDDS、加载 ROS 2 Lyrical 基准并修复 Pinocchio 动态链接库，直接开箱即用：
+`bin/tuina` 具备自动环境感知能力，会自动定位 `tuinadex-control` Conda 环境、配置 CycloneDDS、加载 ROS 2 基准并修复 Pinocchio 动态链接库，直接开箱即用：
 
 ```bash
-cd /home/bright/win_office/ubantu_files/project/TuinaDex_v2.0
+git clone https://github.com/MacroBright/TuinaDex_v2.0.git && cd TuinaDex_v2.0
 
-# 1. 查看 CLI 整体帮助与环境自检诊断
+# 1. 查看 CLI 整体帮助与环境自检诊断 (自动探测 PC 或香橙派 aarch64)
 ./bin/tuina --help
-./bin/tuina --env-info
+./bin/tuina sys env
 
-# 2. 一键拉起 22 维物理仿真并弹出 3D 视窗 (机械臂 + 灵巧手 + 推拿床假人)
+# 2. 编译工作区与配置 Tab 自动补全
+./bin/tuina sys build
+./bin/tuina sys completion --install-hint --shell bash
+
+# 3. 一键拉起 22 维物理仿真并弹出 3D 视窗 (机械臂 + 灵巧手 + 推拿床假人)
 ./bin/tuina launch --sim --gui
 
 # 3. 纯后台无头模式运行仿真 (适用于 CI、录制与自动化测试)
@@ -45,16 +49,23 @@ cd /home/bright/win_office/ubantu_files/project/TuinaDex_v2.0
 ./bin/tuina teleop sim --mock
 
 # 10. 一键启动起飞前三合一标定向导 (桌面平面 + 手腕 IMU + 灵巧手活动度)
-./bin/tuina teleop calibrate
+./bin/tuina calibrate all
 
-# 8. 一键启动 Web UI 数据采集工作台 (浏览器访问 http://localhost:8080)
+# 11. 一键启动 Web UI 数据采集工作台 (仿真/真机，浏览器访问 http://127.0.0.1:8080)
 ./bin/tuina collect hub --env sim --mode arm_hand
+# 真机三机位采集 (加载 configs/real_cameras.yaml):
+./bin/tuina collect hub --env real --mode arm_hand
 
-# 9. 纯终端离线快速采集 5 个推拿试次
+# 12. 纯终端离线快速采集 5 个推拿试次
 ./bin/tuina collect terminal --episodes 5 --frames-per-episode 150
 
-# 10. 一键运行采集与导出自动化端到端 E2E 自检 (离屏 EGL + H.264 MP4)
+# 13. 离线将 rosbag2 转换为 LeRobotDataset v3.0 并检视统计信息
+./bin/tuina data convert --bag bags/session_latest --out data/tuina_real_demo
+./bin/tuina data inspect data/tuina_demo
+
+# 14. 一键运行采集与导出自动化端到端 E2E 自检 / 隔离域单测
 ./bin/tuina collect check
+./bin/tuina sys test --suite cli
 ```
 
 ---
@@ -126,16 +137,24 @@ tuina sys completion --install-hint --shell bash   # 或 --shell zsh
 | `--arm-channel` / `--hand-port` | String | `can0` / `/dev/ttyUSB0` | 机械臂 SocketCAN 与灵巧手串口路径 |
 | `--rate-hz` / `--watchdog-timeout` | Float | `50.0` / `0.30` | 主控周期频率与看门狗超时回退时间 |
 
-#### 1.2 全域高阶域速查
-| 域 | 核心子命令示例 | 说明 |
-| :--- | :--- | :--- |
-| `teleop` | `tuina teleop sim --mock` / `composite --arm-channel can0` / `calibrate [--imu-only]` | 视-惯遥操（`calibrate` 默认 IMU `/dev/myimu` 且自动探测相机） |
-| `collect` | `tuina collect hub --env sim` / `terminal --env real --camera-map ...` / `check` | Web UI Hub、终端录制与 E2E 校验 |
-| `calibrate` | `tuina calibrate all` / `imu` / `hand` / `hand-limits` / `arm-ready` / `arm-goto` | 一键起飞前标定、手腕 IMU、灵巧手与机械臂姿态校准 |
-| `arm` | `tuina arm status` / `watch` / `move -j 1 -a 15` / `zero` / `can up --bitrate 1000000` | 6-DOF reBot 控制与 1Mbps SocketCAN 管理（高危命令带急停确认） |
-| `hand` | `tuina hand control` / `calibrate` / `diagnose` / `teleop` | 16-DOF LEAP Hand 工具集（保留 `leap-*` 兼容命令） |
-| `data` | `tuina data convert --bag ... --out ...` / `inspect <dir>` / `convert-docker` / `vla-cloud` | 严格路由至 `tuinadex-vla` 隔离转换与检视 |
-| `sys` | `tuina sys env` / `verify` / `build` / `test --suite teleop` / `e2e --suite unified` / `rosbridge` | 全系统环境检查、编译、分域单测、E2E 与桥接运维 |
+#### 1.2 硬件安全确认门禁与前置自检 (`safety.py`)
+所有涉及物理真机通电、总线指令下发、舵机解锁或零点改写的命令（如 `launch --real`、`teleop hand` / `composite` / `real` 非 `--mock`、`collect --env real` 非 `--mock-teleop`、`arm zero` / `move` / `teach` / `goto-ready` / `can up|down`、`calibrate hand|hand-limits|arm-ready|arm-goto`），默认均触发 **硬件前置自检 + 交互式安全确认**：
+- **前置诊断 (`[PREFLIGHT]`)**: 自动检查 SocketCAN 接口（`/sys/class/net/<channel>/flags` 与 `operstate`）、串口设备存在性，并检测 `/dev/ttyUSB*` 与 `/dev/myimu` 是否指向同一物理串口（防止 IMU 与灵巧手抢占冲突）；
+- **全局开关**:
+  - `--dry-run`: 仅打印前置诊断与将要执行的隔离命令，绝不触碰总线；
+  - `-y` / `--yes`: 已确认急停开关 (E-Stop) 就位且工作空间清空时，跳过交互式 `[y/N]` 确认；
+  - `--sim` / `--mock` / `--mock-teleop`: 自动跳过真机硬件确认。
+
+#### 1.3 全域高阶域速查
+| 域 | 核心子命令与关键参数 | 运行时隔离 | 说明 |
+| :--- | :--- | :--- | :--- |
+| **`teleop`** | `sim` / `hand [--backend direct\|ros2]` / `arm` / `composite` (`real`) / `calibrate` / `node` | `control` / `ros2` | `composite` / `real` 对接 `teleop_composite_real.launch.py`；`calibrate` 默认 `--imu-port /dev/myimu` 且自动探测相机 |
+| **`collect`** | `hub` / `terminal` / `check [--legacy]`（支持 `--env sim\|real`, `--camera-config`, `--camera-map`, `--max-staleness`） | `control` / `bash` | Web UI Hub、终端采集与 E2E 校验（`--env real` 默认延迟上限 0.15s） |
+| **`calibrate`** | `all` (`preflight`) / `imu` / `hand` / `hand-limits` / `arm-ready` / `arm-goto` | `control` | 三合一标定、腕部 IMU 三姿态校准、LEAP Hand 零点/限位扫描、reBot 拖动示教 |
+| **`arm`** | `cli` / `status` / `watch` (`drag`, `read`) / `zero` / `move` / `teach` / `goto-ready` / `can {status,up,down,vcan}` | `control` / `bash` | 6-DOF reBot 控制与 1Mbps SocketCAN 管理（`can up` 默认 `--bitrate 1000000`） |
+| **`hand`** | `control` / `calibrate` / `diagnose` (`diagnostics`) / `teleop` | `control` | 16-DOF LEAP Hand 工具集（保留 `leap-*` 兼容命令） |
+| **`data`** | `convert --bag ... --out ...` / `inspect <dir>` / `convert-docker [--build]` / `vla-cloud [--build]` | `vla` / `bash` | 严格路由至 `tuinadex-vla` 隔离转换与检视，或拉起 Docker 容器 |
+| **`sys`** | `env` / `verify` / `init-pc` / `init-edge` / `dds` / `build` / `test --suite {cli,core,teleop,hub,dataset,ros2,all}` / `e2e` / `rosbridge` / `teleop-bridge` / `pub` / `probe` / `docker` / `completion` | `bash` / `ros2` / `control` / `vla` | 全系统环境检查、编译、分域隔离测试、E2E 与硬件桥接运维 |
 
 ---
 
@@ -195,6 +214,10 @@ flowchart TD
 ## 4. 目录结构
 
 ```
+bin/
+├── tuina                         # 全局 CLI 可执行入口（软链至 ~/.local/bin/tuina）
+└── tuina-completion.bash         # Bash / Zsh Tab 自动补全脚本
+
 src/tuinadex_bringup/
 ├── config/
 │   └── robot_params.yaml         # 臂手协同全局参数声明
@@ -204,13 +227,19 @@ src/tuinadex_bringup/
 │   └── tuinadex_bringup          # ROS 2 包索引
 ├── tuinadex_bringup/
 │   ├── __init__.py
-│   └── cli/                      # TuinaDex 统一 CLI 控制台核心实现
+│   └── cli/                      # TuinaDex 八大域系统级 CLI 控制台核心实现
 │       ├── __init__.py
-│       ├── main.py               # tuina CLI 根解析器与入口
-│       ├── launch.py             # tuina launch 子命令路由 (对接 robot.launch.py)
-│       ├── teleop.py             # tuina teleop 子命令路由
-│       ├── collect.py            # tuina collect 子命令路由
-│       └── env_detector.py       # Conda 与 ROS 2 动态环境自感知探测器
+│       ├── main.py               # tuina CLI 根解析器 (-y/--yes, --dry-run, --env-info)
+│       ├── env_detector.py       # 三运行时隔离环境路由 (control / vla / ros2 / bash)
+│       ├── safety.py             # 硬件前置自检 ([PREFLIGHT]) 与急停交互确认门禁
+│       ├── launch.py             # tuina launch 路由 (robot / hand / arm / sim)
+│       ├── teleop.py             # tuina teleop 路由 (hand / arm / composite / sim / calibrate / node)
+│       ├── collect.py            # tuina collect 路由 (hub / terminal / check)
+│       ├── calibrate.py          # tuina calibrate 路由 (all / imu / hand / hand-limits / arm-ready / arm-goto)
+│       ├── arm.py                # tuina arm 路由 (rebot.cli / 拖动示教 / SocketCAN 1Mbps)
+│       ├── hand.py               # tuina hand 路由 (leap-control / calibrate / diagnose / teleop)
+│       ├── data.py               # tuina data 路由 (LeRobot v3.0 转换 / inspect / VLA 容器)
+│       └── sys_tools.py          # tuina sys 路由 (env / verify / build / test / e2e / rosbridge / completion)
 ├── package.xml                   # 依赖汇总声明
 └── setup.py                      # 安装规则、Launch 映射与 tuina 命令入口注册
 ```
@@ -220,24 +249,20 @@ src/tuinadex_bringup/
 ## 5. 单元测试与闭环验证
 
 ```bash
-# 1. 验证 tuina 统一 CLI 全量解析单测 (包含 launch, teleop, collect, dry-run 15 项全部通过)
-python3 -m pytest tests/test_tuina_cli.py -v
+# 1. 验证 tuina 全域 CLI 解析、安全门禁与环境隔离单测 (37 项全过)
+./bin/tuina sys test --suite cli
+# 或手动运行:
+python3 -m pytest tests/test_tuina_cli.py tests/test_tuina_cli_teleop.py tests/test_tuina_cli_system.py -v
 
-# 2. 运行 22 维一体化机器人端到端闭环自检
-bash scripts/e2e_unified_robot_check.sh
+# 2. 验证 ROS 2 启动参数契约与集成单测
+ROS_DOMAIN_ID=99 ./bin/tuina sys test --suite ros2
+
+# 3. 运行 22 维一体化机器人端到端闭环自检
+./bin/tuina sys e2e --suite unified
 ```
 
 **预期输出指标**:
-```
-tests/test_tuina_cli.py::test_get_repo_root PASSED                       [  6%]
-tests/test_tuina_cli.py::test_get_conda_python PASSED                    [ 13%]
-tests/test_tuina_cli.py::test_cli_help PASSED                            [ 20%]
-tests/test_tuina_cli.py::test_teleop_sim_args PASSED                     [ 26%]
-tests/test_tuina_cli.py::test_collect_hub_args PASSED                    [ 46%]
-tests/test_tuina_cli.py::test_launch_sim_args PASSED                     [ 66%]
-tests/test_tuina_cli.py::test_launch_real_args PASSED                    [ 73%]
-tests/test_tuina_cli.py::test_launch_mock_args PASSED                    [ 80%]
-tests/test_tuina_cli.py::test_dispatch_launch_dry_run PASSED             [ 86%]
-...
-============================== 15 passed in 0.05s ==============================
+```text
+tests/test_tuina_cli.py + tests/test_tuina_cli_teleop.py + tests/test_tuina_cli_system.py
+============================== 37 passed in ~0.6s ==============================
 ```

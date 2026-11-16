@@ -254,12 +254,41 @@ def compute_palm_basis(
     # Dorsal normal vector Z = across x forward
     z_raw = np.cross(across, y_palm)
     z_norm = np.linalg.norm(z_raw)
-    if z_norm < 1e-6:
-        z_palm = np.array([0.0, 0.0, 1.0], dtype=np.float64)
-    else:
-        z_palm = z_raw / z_norm
 
-    # Gram-Schmidt re-orthogonalization: X = Y x Z
+    # 5点掌骨刚体主平面 SVD 拟合 (Wrist, Index MCP, Middle MCP, Ring MCP, Pinky MCP)
+    # 相比单跨度叉乘，多点拟合能显著消除手指微动与侧倾对法向量的瞬态扰动
+    palm_pts = np.array([
+        p_wrist,
+        p_index_mcp,
+        p_middle_mcp,
+        pts_cam[LM_RING_MCP],
+        p_pinky_mcp,
+    ], dtype=np.float64)
+    palm_center = np.mean(palm_pts, axis=0)
+    shifted = palm_pts - palm_center
+    if np.all(np.isfinite(shifted)) and z_norm >= 1e-6:
+        try:
+            _, _, vh = np.linalg.svd(shifted)
+            normal_svd = vh[2]
+            if np.dot(normal_svd, z_raw) < 0:
+                normal_svd = -normal_svd
+            z_palm = normal_svd / max(1e-6, float(np.linalg.norm(normal_svd)))
+        except Exception:
+            z_palm = z_raw / z_norm
+    elif z_norm >= 1e-6:
+        z_palm = z_raw / z_norm
+    else:
+        z_palm = np.array([0.0, 0.0, 1.0], dtype=np.float64)
+
+    # Gram-Schmidt re-orthogonalization: ensure Z is strictly orthogonal to forward Y
+    z_palm = z_palm - float(np.dot(z_palm, y_palm)) * y_palm
+    z_norm_final = np.linalg.norm(z_palm)
+    if z_norm_final > 1e-6:
+        z_palm = z_palm / z_norm_final
+    else:
+        z_palm = np.array([0.0, 0.0, 1.0], dtype=np.float64)
+
+    # Lateral axis: X = Y x Z
     x_palm = np.cross(y_palm, z_palm)
     x_norm = np.linalg.norm(x_palm)
     if x_norm < 1e-6:
@@ -309,6 +338,7 @@ class WristTracker:
         max_depth_m: float = 2.50,
         depth_patch_radius: int = 3,
         default_handedness: str = "Right",
+        lock_handedness: bool = False,
     ):
         self.max_hold_time_s = max_hold_time_s
         self.filter_min_cutoff = filter_min_cutoff
@@ -318,6 +348,7 @@ class WristTracker:
         self.max_depth_m = max_depth_m
         self.depth_patch_radius = depth_patch_radius
         self.default_handedness = default_handedness
+        self.lock_handedness = lock_handedness
         self._locked_handedness: str = default_handedness
         self._handedness_switch_count: int = 0
 
@@ -683,6 +714,8 @@ class WristTracker:
 
     def _update_handedness_consensus(self, raw_handedness: str, score: float = 1.0) -> str:
         """Filter raw handedness through temporal consensus lock to eliminate single-frame flips."""
+        if getattr(self, "lock_handedness", False):
+            return self.default_handedness
         if raw_handedness != self._locked_handedness:
             self._handedness_switch_count += 1
             if self._handedness_switch_count >= 10 and score >= 0.80:

@@ -49,15 +49,18 @@ def draw_simulation_hud(
     safety_report: Optional[SafetyReport] = None,
     toast: Optional[str] = None,
     hand_hold: bool = False,
+    is_sim: bool = True,
 ) -> np.ndarray:
-    """Create a high-density, polished telemetry dashboard for the 22-DOF MuJoCo twin."""
+    """Create a high-density, polished telemetry dashboard for the 22-DOF robot (simulation or real)."""
     cam_h, cam_w = camera_view.shape[:2]
     panel_w = 640
     panel = np.zeros((cam_h, panel_w, 3), dtype=np.uint8)
 
-    # 1. Header
-    cv2.putText(panel, "TuinaDex Digital Twin Teleop (MuJoCo)", (20, 30),
-                cv2.FONT_HERSHEY_SIMPLEX, 0.60, (255, 255, 255), 2, cv2.LINE_AA)
+    # 1. Header (自动区分 MuJoCo 仿真孪生与物理真机)
+    title_text = "TuinaDex Teleop [仿真 (MuJoCo)]" if is_sim else "TuinaDex Teleop [真机 (Real)]"
+    title_color = (255, 255, 255) if is_sim else (0, 215, 255)
+    cv2.putText(panel, title_text, (20, 30),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.60, title_color, 2, cv2.LINE_AA)
 
     # 2. Clutch & Status Badges
     state_color = (0, 220, 0) if clutch.state == ClutchState.ENGAGED else (0, 200, 255)
@@ -224,11 +227,14 @@ def draw_simulation_hud(
                         cv2.FONT_HERSHEY_SIMPLEX, 0.33, (190, 190, 190), 1, cv2.LINE_AA)
 
     # 7. Hotkey footer
-    footer_y = cam_h - 15
-    cv2.line(panel, (20, footer_y - 15), (panel_w - 20, footer_y - 15), (60, 60, 70), 1)
-    footer_text = "[C] Clutch | [R/H] Ready | [L] HoldHand | [S] Safety | [Z] Zero | [I] IMU | [Q] Quit"
-    cv2.putText(panel, footer_text, (10, footer_y),
-                cv2.FONT_HERSHEY_SIMPLEX, 0.35, (140, 140, 150), 1, cv2.LINE_AA)
+    footer_y = cam_h - 22
+    cv2.line(panel, (20, footer_y - 12), (panel_w - 20, footer_y - 12), (60, 60, 70), 1)
+    line1 = "[C] Clutch | [R/H] Ready | [A] PosAxis | [X] IMUAxis"
+    line2 = "[L] HoldHand | [S] Safety | [I] IMU | [Z] Zero | [Q] Quit"
+    cv2.putText(panel, line1, (10, footer_y + 4),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.33, (140, 140, 150), 1, cv2.LINE_AA)
+    cv2.putText(panel, line2, (10, footer_y + 17),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.33, (140, 140, 150), 1, cv2.LINE_AA)
 
     if toast:
         (text_w, text_h), _ = cv2.getTextSize(

@@ -179,6 +179,28 @@ class _HubHandler(BaseHTTPRequestHandler):
                 self._static("style.css", "text/css; charset=utf-8")
             elif path == "/api/status":
                 self._json(HTTPStatus.OK, self.server.controller.status())
+            elif path == "/api/devices":
+                from ..cameras.real_camera_rig import discover_uvc_devices
+                channel = self.server.controller.channel
+                bindings = (
+                    channel.get_bindings()
+                    if hasattr(channel, "get_bindings")
+                    else {}
+                )
+                ready = (
+                    channel.is_ready()
+                    if hasattr(channel, "is_ready")
+                    else True
+                )
+                self._json(
+                    HTTPStatus.OK,
+                    {
+                        "devices": discover_uvc_devices(),
+                        "bindings": bindings,
+                        "cameras": list(channel.camera_names),
+                        "ready": ready,
+                    },
+                )
             elif path.startswith("/video/"):
                 self._mjpeg(path.rsplit("/", 1)[-1])
             elif path == "/events/telemetry":
@@ -190,6 +212,9 @@ class _HubHandler(BaseHTTPRequestHandler):
 
     def do_POST(self) -> None:  # noqa: N802 - stdlib handler convention
         path = self.path.split("?", 1)[0]
+        if path == "/api/cameras/bind":
+            self._bind_camera()
+            return
         if not path.startswith("/api/action/"):
             self._json(HTTPStatus.NOT_FOUND, {"error": "not found"})
             return
@@ -199,6 +224,48 @@ class _HubHandler(BaseHTTPRequestHandler):
             HTTPStatus.OK if result.get("ok") else HTTPStatus.BAD_REQUEST
         )
         self._json(status, result)
+
+    def _bind_camera(self) -> None:
+        payload = self._read_json()
+        cam = str(payload.get("camera", "")).strip()
+        dev = str(payload.get("device", "")).strip()
+        channel = self.server.controller.channel
+        if not cam or cam not in channel.camera_names:
+            self._json(
+                HTTPStatus.BAD_REQUEST,
+                {"ok": False, "error": f"Invalid or unknown camera '{cam}'"},
+            )
+            return
+
+        from ..cameras.real_camera_rig import save_real_camera_device
+
+        ok = False
+        if hasattr(channel, "bind_camera"):
+            ok = channel.bind_camera(cam, dev)
+        else:
+            ok = True
+
+        if dev:
+            cfg_path = getattr(channel, "config_path", None)
+            try:
+                save_real_camera_device(cam, dev, config_path=cfg_path)
+            except Exception as e:
+                logger.warning(f"Could not save camera binding to yaml: {e}")
+
+        bindings = (
+            channel.get_bindings() if hasattr(channel, "get_bindings") else {}
+        )
+        ready = channel.is_ready() if hasattr(channel, "is_ready") else True
+        self._json(
+            HTTPStatus.OK if ok else HTTPStatus.INTERNAL_SERVER_ERROR,
+            {
+                "ok": ok,
+                "camera": cam,
+                "device": dev,
+                "bindings": bindings,
+                "ready": ready,
+            },
+        )
 
     def _read_json(self) -> dict:
         length = int(self.headers.get("Content-Length") or 0)

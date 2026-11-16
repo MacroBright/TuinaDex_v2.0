@@ -154,10 +154,26 @@ def run_hub_session(args, config: RobotConfig):
         use_videos=True,
     )
     collector = TuinaCollector(env=None)
-    from tuinadex_teleop.adapters import DEFAULT_READY_ARM_Q
+    def _load_ready_arm_q_from_config() -> np.ndarray:
+        try:
+            from tuinadex_teleop.teleop_sim_composite_node import _resolve_config_path
+            for cand in ("configs/teleop_real_posture.yaml", "src/tuinadex_teleop/configs/teleop_real_posture.yaml"):
+                cfg_p = _resolve_config_path(cand)
+                if cfg_p.is_file():
+                    with open(cfg_p, "r", encoding="utf-8") as f:
+                        cfg_data = yaml.safe_load(f) or {}
+                    ready_dict = cfg_data.get("arm", {}).get("ready_pose_deg", {})
+                    if isinstance(ready_dict, dict) and len(ready_dict) >= 6:
+                        degs = [float(ready_dict.get(f"joint{i+1}", 0.0)) for i in range(6)]
+                        return np.radians(degs).astype(np.float32)
+        except Exception:
+            pass
+        from tuinadex_teleop.adapters import DEFAULT_READY_ARM_Q
+        return DEFAULT_READY_ARM_Q.copy()
+
     init_q = np.zeros(config.action_dim, dtype=np.float32)
     if config.action_dim >= 6:
-        init_q[:6] = DEFAULT_READY_ARM_Q.copy()
+        init_q[:6] = _load_ready_arm_q_from_config()
     commanded = {
         "q": init_q
     }
@@ -214,10 +230,16 @@ def run_hub_session(args, config: RobotConfig):
             config.camera_names,
             config_path=args.camera_config,
             overrides=parse_camera_map(args.camera_map),
+            tolerant=True,
         )
         for cfg in cam_configs:
+            dev_desc = (
+                cfg.device
+                if cfg.device
+                else "[未绑定 / 可在 Web Hub 界面下拉菜单中选择]"
+            )
             logger.info(
-                f" - Camera [{cfg.name}]: {cfg.device} "
+                f" - Camera [{cfg.name}]: {dev_desc} "
                 f"({cfg.width}x{cfg.height} {cfg.fourcc} @{cfg.fps:.0f}Hz)"
             )
         producer = RealCameraProducerThread(
@@ -226,16 +248,17 @@ def run_hub_session(args, config: RobotConfig):
             jpeg_quality=90,
         )
         producer.start()
-        if not producer.wait_ready(15.0):
-            err = producer.stats()["last_error"]
-            producer.stop()
-            raise RuntimeError(f"Real camera producer failed to start: {err}")
+        if not producer.wait_ready(2.0):
+            logger.warning(
+                "部分真实摄像头尚未就绪或未绑定设备。可在 Web Hub (http://127.0.0.1:8080) 界面下拉菜单中实时选择并绑定相机。"
+            )
         channel = RealDataChannel(
             env=None,
             action_supplier=lambda: commanded["q"],
             camera_names=tuple(config.camera_names),
             camera_producer=producer,
             state_supplier=_state_supplier,
+            config_path=args.camera_config,
         )
 
     sub_node = None
@@ -377,21 +400,20 @@ def run_hub_session(args, config: RobotConfig):
             logger.warning(f"Could not spawn ros2_teleop_bridge: {b_exc}")
 
     def _do_home():
+        ready_arm_q = _load_ready_arm_q_from_config()
         with lock:
             hand_hold_state["enabled"] = False
             if hasattr(config, "action_dim") and config.action_dim >= 22:
-                from tuinadex_teleop.adapters import DEFAULT_READY_ARM_Q
-                commanded["q"][:6] = DEFAULT_READY_ARM_Q.copy()
+                commanded["q"][:6] = ready_arm_q.copy()
                 commanded["q"][6:22] = 0.0
             if adapter is not None:
-                from tuinadex_teleop.adapters import DEFAULT_READY_ARM_Q
                 now = time.monotonic()
                 cmd = TeleopCommand(
                     timestamp=now,
                     arm_command=TeleopArmCommand(
                         timestamp=now,
                         target_pose=np.eye(4),
-                        target_q=DEFAULT_READY_ARM_Q.copy(),
+                        target_q=ready_arm_q.copy(),
                     ),
                     hand_command=TeleopHandCommand(
                         timestamp=now,
@@ -413,7 +435,8 @@ def run_hub_session(args, config: RobotConfig):
                 home_pub.publish(Empty())
             except Exception as e:
                 logger.debug(f"Failed to publish /teleop/home: {e}")
-        logger.info("[HOME] Robot returned to initial ready posture")
+        deg_str = ", ".join(f"{round(float(np.degrees(x)), 1)}°" for x in ready_arm_q)
+        logger.info(f"[HOME] Robot returned to initial ready posture: [{deg_str}]")
 
     def _do_hand_hold(enabled: bool):
         with lock:
@@ -434,6 +457,24 @@ def run_hub_session(args, config: RobotConfig):
                 logger.debug(f"Failed to publish /teleop/hand_hold: {e}")
         logger.info(f"[HAND_HOLD] Hand action hold -> {'LOCKED' if enabled else 'FOLLOW'}")
 
+    def _do_axis_cycle():
+        try:
+            h_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            h_sock.sendto(b"AXIS_CYCLE", ("127.0.0.1", 9877))
+            h_sock.close()
+        except Exception:
+            pass
+        logger.info("[AXIS] Position mapping axis cycle triggered")
+
+    def _do_imu_axes_cycle():
+        try:
+            h_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            h_sock.sendto(b"IMU_AXES_CYCLE", ("127.0.0.1", 9877))
+            h_sock.close()
+        except Exception:
+            pass
+        logger.info("[IMU] IMU orientation axis cycle triggered")
+
     max_staleness = (
         float(args.max_staleness)
         if args.max_staleness is not None
@@ -445,12 +486,15 @@ def run_hub_session(args, config: RobotConfig):
         control_fps=args.fps,
         ui_fps=args.ui_fps,
         max_staleness_s=max_staleness,
+        env=args.env,
     )
     controller.on_save = lambda episode: writer.save_episode(
         episode, task=args.task
     )
     controller.on_home = _do_home
     controller.on_hand_hold = _do_hand_hold
+    controller.on_axis_cycle = _do_axis_cycle
+    controller.on_imu_axes_cycle = _do_imu_axes_cycle
 
     server = CollectionHubServer(
         controller, host=args.host, port=args.port
@@ -542,6 +586,10 @@ def run_hub_session(args, config: RobotConfig):
 
 def main():
     args = parse_args()
+    if args.env == "real" and args.repo_id == "data/tuina_demo":
+        args.repo_id = "data/tuina_real_demo"
+        logger.info(f"Real environment detected: defaulting --repo-id to {args.repo_id}")
+
     cam_list = [c.strip() for c in args.cameras.split(",") if c.strip()]
     config = RobotConfig(
         mode=args.mode,
