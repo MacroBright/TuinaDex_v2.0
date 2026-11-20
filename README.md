@@ -10,10 +10,19 @@ TuinaDex 是面向中医推拿/理疗场景构建的高性能具身智能机器�
 目前已完成 **6-DOF reBot 机械臂 + 16-DOF LEAP Hand 仿生灵巧手 (22-DOF)** 在 **MuJoCo 数字孪生与真实物理硬件双端** 的视-惯遥操验收、多相机 Web UI 数据采集闭环与八大语义域系统级 CLI 控制台 (`tuina`) 全域封装：
 `tuina CLI 控制台 / ROS2 运行时 -> 60Hz 视-惯协同真机/仿真遥操 -> 多机位 Web UI 数据采集 -> LeRobotDataset v3.0 -> 具身策略学习 (SmolVLA/ACT)`。
 
-> [!TIP]
-> **近期里程碑**:
-> - **真机遥操与采集验收通过**：支持 16-DOF 灵巧手超低延迟直驱/ROS 2 双后端 (`tuina teleop hand`)、22-DOF 臂手真机协同 (`tuina teleop composite`)、机械臂拖动示教 Ready Pose (`tuina arm teach`) 及物理 UVC 多相机采集 (`tuina collect hub --env real`)；
-> - **系统级 CLI (`tuina`) 全面升级**：收敛为 `launch / teleop / collect / calibrate / arm / hand / data / sys` 八大命令域，自动完成 `tuinadex-control` / `tuinadex-vla` / `ROS 2 Lyrical` 三运行时环境隔离与真机急停交互确认。
+<p align="center">
+  <img src="docs/images/real.png" width="85%" alt="TuinaDex v2.0 真实 22-DOF 臂手推拿机器人平台" />
+  <br>
+  <em>图 1: TuinaDex v2.0 真实 22-DOF 臂手协同具身推拿硬件系统 (6-DOF reBot 机械臂 + 16-DOF LEAP Hand + Intel RealSense D455 + 腕部 IMU)</em>
+</p>
+
+<p align="center">
+  <video src="docs/images/telop_real.mp4" controls width="85%" poster="docs/images/real.png">
+    <a href="docs/images/telop_real.mp4">🎥 点击播放：TuinaDex v2.0 真实硬件 60Hz 视-惯正交遥操闭环演示视频 (telop_real.mp4)</a>
+  </video>
+  <br>
+  <em>🎥 演示视频: 60Hz 视-惯正交真机遥操、相对增量离合、动作实时跟随与推拿床柔顺接触</em>
+</p>
 
 ---
 
@@ -171,6 +180,13 @@ sudo bash scripts/env/init_orangepi.sh --install-all   # 自动安装 1Mbps Sock
 ./bin/tuina collect check
 ```
 
+<p align="center">
+  <img src="docs/images/teleop_sim1.png" width="48%" alt="MuJoCo 仿真遥操 OpenCV HUD 视窗 (手势重定向与 22D 关节角)" />
+  <img src="docs/images/teleop_sim2.png" width="48%" alt="MuJoCo 22-DOF 动力学孪生跟随与推拿床交互" />
+  <br>
+  <em>图 2: MuJoCo 动力学孪生与 60Hz 实时视-惯遥操 OpenCV HUD 交互视窗 (手势骨架提取、IMU 四元数姿态解算与多热键控制)</em>
+</p>
+
 #### 模态 B. 物理真机标定、遥操与数据采集闭环 (`--real` · 已通过验收)
 *适用于香橙派或物理工控机连接真实 6-DOF reBot 机械臂 + 16-DOF LEAP Hand 灵巧手 + USB 相机阵列：*
 > [!CAUTION]
@@ -217,7 +233,11 @@ sudo bash scripts/env/init_orangepi.sh --install-all   # 自动安装 1Mbps Sock
 | **`[Z]`** | 零位复位 (Zero) | 重置位移原点至当前手腕位置 |
 | **`[Q]` / `[ESC]`** | 安全两阶段退出 (Quit) | 先回正末端关节再平稳阻尼释放总线，安全断开连接 |
 
-![TuinaDex 22-DOF 视-惯遥操实时 HUD 界面](docs/images/teleop_hub.png)
+<p align="center">
+  <img src="docs/images/teleop_hub.png" width="90%" alt="TuinaDex 多机位 Web UI 数据采集工作台 (http://127.0.0.1:8080)" />
+  <br>
+  <em>图 3: 零外部依赖多相机 Web UI 数据采集监视工作台 (三机位低延迟 MJPEG 实时流、25Hz 遥测波形、状态机录制与离合状态指示)</em>
+</p>
 
 ---
 
