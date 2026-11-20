@@ -17,11 +17,11 @@ TuinaDex 是面向中医推拿/理疗场景构建的高性能具身智能机器�
 </p>
 
 <p align="center">
-  <video src="docs/images/telop_real.mp4" controls width="85%" poster="docs/images/real.png">
-    <a href="docs/images/telop_real.mp4">🎥 点击播放：TuinaDex v2.0 真实硬件 60Hz 视-惯正交遥操闭环演示视频 (telop_real.mp4)</a>
-  </video>
+  <a href="docs/images/telop_real.mp4" title="点击跳转查看超清 2560x1600 MP4 原视频">
+    <img src="docs/images/teleop_real.gif" width="85%" alt="TuinaDex 60Hz 视-惯正交真机遥操闭环动态演示" />
+  </a>
   <br>
-  <em>🎥 演示视频: 60Hz 视-惯正交真机遥操、相对增量离合、动作实时跟随与推拿床柔顺接触</em>
+  <em>🎥 动态演示: 60Hz 视-惯正交真机遥操、相对增量离合、动作实时跟随与推拿床柔顺接触 (<a href="docs/images/telop_real.mp4">▶️ 点击查看超清 2560x1600 MP4 演示原视频</a>)</em>
 </p>
 
 ---
